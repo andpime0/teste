@@ -1,63 +1,43 @@
 import streamlit as st
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Prescrição Clínica - José", layout="wide")
+st.set_page_config(page_title="Calculadora Clínica", layout="wide")
 
-# Estilo para o Relatório
-st.title("📋 Prescrição de Exercício Clínico: José")
-st.subheader("Enquadramento: Pós-Enfarte (IAM) + Diabetes Tipo 2")
-st.info("Diretrizes: ACSM & AHA/ACC Guidelines")
+# --- BARRA LATERAL PARA INPUT DE DADOS ---
+st.sidebar.header("Configuração do Paciente")
+nome = st.sidebar.text_input("Nome do Paciente", "José")
+idade = st.sidebar.number_input("Idade", 18, 100, 55)
 
-# --- LÓGICA DE PRESCRIÇÃO DEFINIDA ---
-# Baseado em 60% da FCmáx (161 bpm) para segurança pós-IAM
-fc_alvo = 110
-tempo_alvo = 30
-rpe_alvo = 12 # Escala de Borg (Esforço moderado)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Dados do Teste")
+# Criamos sliders para você ajustar os valores na hora
+fc_max_obs = st.sidebar.slider("FC Máxima Observada (bpm)", 60, 220, 145)
+fc_ref = st.sidebar.slider("FC Referência (Ex: Bruce)", 60, 220, 161)
+vo2_obs = st.sidebar.slider("VO2máx Observado", 5.0, 80.0, 27.2)
+vo2_ref = st.sidebar.slider("VO2máx Referência", 5.0, 80.0, 26.5)
 
-# --- INTERFACE ---
-col1, col2 = st.columns([1, 2])
+# --- CORPO DO RELATÓRIO ---
+st.title(f"📊 Avaliação Clínica: {nome}")
+st.write(f"Paciente de {idade} anos")
 
-with col1:
-    st.markdown("### 🎯 Metas Diárias")
-    st.metric("Frequência Cardíaca Alvo", f"{fc_alvo} bpm")
-    st.metric("Duração da Sessão", f"{tempo_alvo} min")
-    st.metric("Intensidade (Borg)", "12 (Ligeiro-Moderado)")
+col1, col2 = st.columns(2)
 
-with col2:
-    # Gráfico de Velocímetro de Segurança
+def criar_gauge(label, valor, referencia, unidade, cor):
     fig = go.Figure(go.Indicator(
         mode = "gauge+number",
-        value = fc_alvo,
-        title = {'text': "Zona de Treino Segura (bpm)"},
+        value = valor,
+        title = {'text': f"{label} ({unidade})"},
         gauge = {
-            'axis': {'range': [0, 180]},
-            'bar': {'color': "#1a73e8"},
-            'steps': [
-                {'range': [0, 90], 'color': "#eeeeee"},
-                {'range': [90, 115], 'color': "#c6f6d5"},
-                {'range': [115, 180], 'color': "#fed7d7"}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 5},
-                'thickness': 0.8,
-                'value': 125 # Limite de Isquemia/Segurança
-            }
-        }
-    ))
-    fig.update_layout(height=350)
-    st.plotly_chart(fig, use_container_width=True)
+            'axis': {'range': [0, referencia * 1.2]},
+            'bar': {'color': cor},
+            'threshold': {'line': {'color': "red", 'width': 5}, 'value': referencia}
+        }))
+    return fig
 
-st.markdown("---")
+with col1:
+    st.plotly_chart(criar_gauge("FC Máxima", fc_max_obs, fc_ref, "bpm", "#2F5597"))
 
-# --- TABELA DE PRESCRIÇÃO DETALHADA ---
-st.write("### Plano de Treino Estruturado")
+with col2:
+    st.plotly_chart(criar_gauge("VO2máx", vo2_obs, vo2_ref, "ml/kg/min", "#A2AD00"))
 
-dados_prescricao = {
-    "Componente": ["Frequência", "Intensidade Aeróbica", "Tempo", "Tipo de Exercício", "Resistência Muscular"],
-    "Prescrição Definida": ["5 dias por semana", "110 bpm", "30 minutos", "Caminhada em plano ou Bicicleta", "2 dias por semana"],
-    "Notas de Segurança": ["Controlo glicémico", "Sem picos de esforço", "Contínuo", "Baixo impacto", "Cargas leves (12-15 reps)"]
-}
-st.table(dados_prescricao)
-
-# --- ALERTAS CLÍNICOS ---
-st.error("⚠️ **Protocolo de Segurança:** Se a glicemia estiver < 100 mg/dL, ingerir 15g de HC. Parar se houver dor no peito ou tonturas.")
+st.success(f"Relatório gerado para {nome}. Ajuste os valores na barra lateral para simular outro caso.")
