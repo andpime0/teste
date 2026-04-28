@@ -30,7 +30,7 @@ else:
     fai_cor = "darkred"
 
 # --- INTERFACE ---
-st.title(f"📊 Avaliação Funcional Aeróbica: {nome}")
+st.title(f"📊 Avaliação Funcional Aeróbia: {nome}")
 st.markdown("---")
 
 col1, col2, col3 = st.columns(3)
