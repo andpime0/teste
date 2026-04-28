@@ -1,43 +1,66 @@
 import streamlit as st
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Calculadora Clínica", layout="wide")
+st.set_page_config(page_title="Avaliação Clínica Avançada", layout="wide")
 
-# --- BARRA LATERAL PARA INPUT DE DADOS ---
-st.sidebar.header("Configuração do Paciente")
-nome = st.sidebar.text_input("Nome do Paciente", "José")
-idade = st.sidebar.number_input("Idade", 18, 100, 55)
+# --- BARRA LATERAL ---
+st.sidebar.header("Dados do Paciente")
+nome = st.sidebar.text_input("Nome", "José")
+vo2_obs = st.sidebar.number_input("VO2máx Observado (ml/kg/min)", 0.0, 80.0, 27.2)
+vo2_prev = st.sidebar.number_input("VO2máx Previsto (ml/kg/min)", 0.1, 80.0, 35.4)
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Dados do Teste")
-# Criamos sliders para você ajustar os valores na hora
-fc_max_obs = st.sidebar.slider("FC Máxima Observada (bpm)", 60, 220, 145)
-fc_ref = st.sidebar.slider("FC Referência (Ex: Bruce)", 60, 220, 161)
-vo2_obs = st.sidebar.slider("VO2máx Observado", 5.0, 80.0, 27.2)
-vo2_ref = st.sidebar.slider("VO2máx Referência", 5.0, 80.0, 26.5)
+# Cálculo automático do FAI (%)
+fai_resultado = ((vo2_prev - vo2_obs) / vo2_prev) * 100
 
-# --- CORPO DO RELATÓRIO ---
-st.title(f"📊 Avaliação Clínica: {nome}")
-st.write(f"Paciente de {idade} anos")
+# Lógica do FAI Level (Baseado na sua fórmula do Excel)
+if fai_resultado < 27:
+    fai_desc = "Normal / Abaixo do limiar clínico"
+    fai_cor = "green"
+elif fai_resultado <= 40:
+    fai_desc = "Comprometimento Leve"
+    fai_cor = "#FFCC00" # Amarelo
+elif fai_resultado <= 54:
+    fai_desc = "Comprometimento Moderado"
+    fai_cor = "#FF9900" # Laranja
+elif fai_resultado <= 68:
+    fai_desc = "Comprometimento Marcado"
+    fai_cor = "#FF3300" # Vermelho
+else:
+    fai_desc = "Comprometimento Extremo"
+    fai_cor = "darkred"
 
-col1, col2 = st.columns(2)
+# --- INTERFACE ---
+st.title(f"📊 Avaliação Funcional Aeróbica: {nome}")
+st.markdown("---")
 
-def criar_gauge(label, valor, referencia, unidade, cor):
+col1, col2, col3 = st.columns(3)
+
+# Função para gráficos
+def criar_gauge(label, valor, max_range, unidade, cor, threshold=None):
     fig = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = valor,
         title = {'text': f"{label} ({unidade})"},
         gauge = {
-            'axis': {'range': [0, referencia * 1.2]},
+            'axis': {'range': [0, max_range]},
             'bar': {'color': cor},
-            'threshold': {'line': {'color': "red", 'width': 5}, 'value': referencia}
+            'threshold': {'line': {'color': "black", 'width': 3}, 'value': threshold} if threshold else None
         }))
+    fig.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
     return fig
 
 with col1:
-    st.plotly_chart(criar_gauge("FC Máxima", fc_max_obs, fc_ref, "bpm", "#2F5597"))
+    st.plotly_chart(criar_gauge("VO2 Máximo", vo2_obs, 60, "ml/kg/min", "#A2AD00", vo2_prev), use_container_width=True)
 
 with col2:
-    st.plotly_chart(criar_gauge("VO2máx", vo2_obs, vo2_ref, "ml/kg/min", "#A2AD00"))
+    # Gráfico do FAI (Invertido: quanto mais alto, pior)
+    st.plotly_chart(criar_gauge("FAI (Défice)", fai_resultado, 100, "%", fai_cor), use_container_width=True)
 
-st.success(f"Relatório gerado para {nome}. Ajuste os valores na barra lateral para simular outro caso.")
+with col3:
+    st.markdown("### Resultado FAI")
+    st.metric("Percentagem de Défice", f"{fai_resultado:.1f}%")
+    st.markdown(f"**Nível:** <span style='color:{fai_cor}; font-size:20px; font-weight:bold;'>{fai_desc}</span>", unsafe_allow_html=True)
+    st.info("O FAI quantifica o défice funcional aeróbico. Valores elevados indicam maior risco cardiovascular.")
+
+st.markdown("---")
+st.write("**Referência:** Franklin BA, Gordon S, Timmis GC. Fundamentals of exercise testing.")
