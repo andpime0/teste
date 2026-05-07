@@ -7,14 +7,14 @@ st.set_page_config(page_title="Relatório Clínico Interativo", layout="wide")
 st.sidebar.header("Configuração do Paciente")
 nome = st.sidebar.text_input("Nome do Paciente", "José")
 
-tipo_treino = st.sidebar.text_input("Tipo de Treino", "Treino Aeróbico")
+tipo_treino = st.sidebar.text_input("Tipo de Treino", "Treino Aeróbio")
 duracao_treino = st.sidebar.number_input("Duração da sessão (min)", 1, 300, 45)
 
 st.sidebar.subheader("Frequência Cardíaca (bpm)")
 fc_obs = st.sidebar.slider("FC Máxima Observada", 60, 220, 145)
 fc_prev = st.sidebar.slider("FC Máxima Prevista (Ref)", 60, 220, 161)
 
-st.sidebar.subheader("Capacidade Aeróbica")
+st.sidebar.subheader("Capacidade Aeróbia")
 vo2_obs = st.sidebar.number_input("VO2máx Observado (ml/kg/min)", 0.0, 80.0, 27.2)
 vo2_prev = st.sidebar.number_input("VO2máx Previsto (ml/kg/min)", 0.1, 80.0, 35.4)
 
