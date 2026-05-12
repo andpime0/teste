@@ -6,6 +6,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import json
 import os
+import sqlite3
 
 st.set_page_config(
     page_title="BestCare | José Oliveira",
@@ -31,52 +32,7 @@ PACIENTE = {
     "hba1c_inicial": 7.8,
     "data_inicio": datetime(2026, 2, 16),
 }
-
-PROGRAMA_SEMANAS = 12
-SESSOES_POR_SEMANA = 3
-
-# ============================================================
-# GERAÇÃO DE DADOS FICTÍCIOS DE EVOLUÇÃO
-# ============================================================
-@st.cache_data
-def gerar_evolucao_jose():
-    """Gera 36 sessões com evolução fisiológica realista."""
-    np.random.seed(42)
-    sessoes = []
-    data_atual = PACIENTE["data_inicio"]
-
-    for sem in range(PROGRAMA_SEMANAS):
-        # Progressão fisiológica esperada ao longo das 12 semanas
-        fator = sem / (PROGRAMA_SEMANAS - 1)  # 0 → 1
-
-        fc_repouso_base = PACIENTE["fc_repouso_inicial"] - 10 * fator  # 78 → 68
-        vo2_base = PACIENTE["vo2_inicial"] + 6.5 * fator                 # 27.2 → 33.7
-        fai_base = ((PACIENTE["vo2_previsto"] - vo2_base) / PACIENTE["vo2_previsto"]) * 100
-        hba1c_base = PACIENTE["hba1c_inicial"] - 1.0 * fator             # 7.8 → 6.8
-
-        for s in range(SESSOES_POR_SEMANA):
-            # Variabilidade intra-semana
-            ruido_fc = np.random.normal(0, 2)
-            ruido_pse = np.random.choice([-1, 0, 0, 0, 1])
-
-            # Intensidade progride; PSE estabiliza por adaptação
-            intensidade_pct = 0.50 + 0.25 * fator + np.random.normal(0, 0.02)
-            fc_durante = int(fc_repouso_base + (PACIENTE["fc_max_teste"] - fc_repouso_base) * intensidade_pct + ruido_fc)
-            duracao = int(25 + 20 * fator)  # 25 → 45 min
-
-            pa_sis_antes = int(128 + np.random.normal(0, 4))
-            pa_dia_antes = int(82 + np.random.normal(0, 3))
-            pa_sis_apos = pa_sis_antes + int(np.random.normal(8, 3))
-            pa_dia_apos = pa_dia_antes + int(np.random.normal(2, 2))
-
-            glic_antes = int(np.random.normal(135 - 20 * fator, 15))
-            glic_apos = glic_antes - int(np.random.normal(25, 8))
-
-            pse_durante = max(11, min(15, int(12 + fator * 1.5 + ruido_pse)))
-            pse_apos = max(10, pse_durante - np.random.choice([1, 2]))
-
-            sintomas_possiveis = ["Nenhum"] * 18 + ["Fadiga ligeira", "Falta de ar leve"]
-            sintoma = np.random.choice(sintomas_possiveis)
+@@ -80,69 +81,214 @@ def gerar_evolucao_jose():
 
             sessoes.append({
                 "data": data_atual,
@@ -103,24 +59,178 @@ def gerar_evolucao_jose():
     return pd.DataFrame(sessoes)
 
 df_sessoes = gerar_evolucao_jose()
+DB_FILE = "bestcare_jose.db"
+DADOS_SESSOES_FILE = "dados_sessoes_jose.json"  # retrocompatibilidade
+
+def get_db_connection():
+    return sqlite3.connect(DB_FILE)
+
+def inicializar_bd():
+    with get_db_connection() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessoes_jose (
+                sessao_n INTEGER PRIMARY KEY,
+                data TEXT NOT NULL,
+                semana INTEGER NOT NULL,
+                tipo TEXT NOT NULL,
+                duracao_min INTEGER NOT NULL,
+                fc_repouso INTEGER NOT NULL,
+                fc_media_durante INTEGER NOT NULL,
+                fc_pico INTEGER NOT NULL,
+                vo2_max REAL NOT NULL,
+                fai REAL NOT NULL,
+                pa_antes TEXT NOT NULL,
+                pa_apos TEXT NOT NULL,
+                glic_antes INTEGER NOT NULL,
+                glic_apos INTEGER NOT NULL,
+                pse_durante INTEGER NOT NULL,
+                pse_apos INTEGER NOT NULL,
+                sintomas TEXT NOT NULL,
+                hba1c REAL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS glicemias_jose (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data TEXT NOT NULL,
+                valor INTEGER NOT NULL,
+                pode_treinar INTEGER NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feedbacks_jose (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data TEXT NOT NULL,
+                borg INTEGER NOT NULL,
+                sintomas TEXT NOT NULL,
+                notas TEXT
+            )
+        """)
+
+def carregar_sessoes_sql():
+    with get_db_connection() as conn:
+        df = pd.read_sql_query("SELECT * FROM sessoes_jose ORDER BY sessao_n", conn)
+
+    if df.empty:
+        return None
+
+    df = df.rename(columns={"vo2_max": "vo2_máx"})
+    df["data"] = pd.to_datetime(df["data"])
+    return df
+
+def guardar_sessoes_sql(df):
+    df_sql = df.copy().rename(columns={"vo2_máx": "vo2_max"})
+    df_sql["data"] = pd.to_datetime(df_sql["data"]).dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+    colunas = [
+        "sessao_n", "data", "semana", "tipo", "duracao_min", "fc_repouso", "fc_media_durante",
+        "fc_pico", "vo2_max", "fai", "pa_antes", "pa_apos", "glic_antes", "glic_apos",
+        "pse_durante", "pse_apos", "sintomas", "hba1c"
+    ]
+
+    with get_db_connection() as conn:
+        conn.execute("DELETE FROM sessoes_jose")
+        df_sql[colunas].to_sql("sessoes_jose", conn, if_exists="append", index=False)
+
+def migrar_json_para_sql_se_necessario():
+    if not os.path.exists(DADOS_SESSOES_FILE):
+        return
+
+    with open(DADOS_SESSOES_FILE, "r", encoding="utf-8") as f:
+        dados = json.load(f)
+
+    if not dados:
+        return
+
+    df_json = pd.DataFrame(dados)
+    if "data" in df_json.columns:
+        df_json["data"] = pd.to_datetime(df_json["data"])
+    guardar_sessoes_sql(df_json)
+
+def obter_sessoes_jose():
+    inicializar_bd()
+
+    df_sql = carregar_sessoes_sql()
+    if df_sql is not None and not df_sql.empty:
+        return df_sql
+
+    migrar_json_para_sql_se_necessario()
+    df_sql = carregar_sessoes_sql()
+    if df_sql is not None and not df_sql.empty:
+        return df_sql
+
+    df_novo = gerar_evolucao_jose()
+    guardar_sessoes_sql(df_novo)
+    return df_novo
+
+df_sessoes = obter_sessoes_jose()
 
 # ============================================================
 # PERSISTÊNCIA DE DADOS REPORTADOS PELO CLIENTE
 # ============================================================
 DADOS_CLIENTE_FILE = "dados_cliente_jose.json"
+DADOS_CLIENTE_FILE = "dados_cliente_jose.json"  # retrocompatibilidade
+
+def carregar_dados_cliente_sql():
+    with get_db_connection() as conn:
+        df_glic = pd.read_sql_query("SELECT data, valor, pode_treinar FROM glicemias_jose ORDER BY id", conn)
+        df_fb = pd.read_sql_query("SELECT data, borg, sintomas, notas FROM feedbacks_jose ORDER BY id", conn)
+
+    glicemias = df_glic.assign(pode_treinar=df_glic["pode_treinar"].astype(bool)).to_dict(orient="records") if not df_glic.empty else []
+    feedbacks = []
+    if not df_fb.empty:
+        feedbacks = [
+            {
+                "data": r["data"],
+                "borg": int(r["borg"]),
+                "sintomas": json.loads(r["sintomas"]),
+                "notas": r["notas"] or "",
+            }
+            for _, r in df_fb.iterrows()
+        ]
+
+    return {"glicemias": glicemias, "feedbacks": feedbacks}
+
+def guardar_dados_cliente_sql(dados):
+    with get_db_connection() as conn:
+        conn.execute("DELETE FROM glicemias_jose")
+        conn.execute("DELETE FROM feedbacks_jose")
+
+        for g in dados.get("glicemias", []):
+            conn.execute(
+                "INSERT INTO glicemias_jose (data, valor, pode_treinar) VALUES (?, ?, ?)",
+                (g["data"], int(g["valor"]), int(bool(g["pode_treinar"])))
+            )
+
+        for fb in dados.get("feedbacks", []):
+            conn.execute(
+                "INSERT INTO feedbacks_jose (data, borg, sintomas, notas) VALUES (?, ?, ?, ?)",
+                (fb["data"], int(fb["borg"]), json.dumps(fb.get("sintomas", []), ensure_ascii=False), fb.get("notas", ""))
+            )
+
+def migrar_dados_cliente_json_para_sql_se_necessario():
+    dados_sql = carregar_dados_cliente_sql()
+    if dados_sql["glicemias"] or dados_sql["feedbacks"]:
+        return dados_sql
 
 def carregar_dados_cliente():
     if os.path.exists(DADOS_CLIENTE_FILE):
         with open(DADOS_CLIENTE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {"glicemias": [], "feedbacks": []}
+            dados_json = json.load(f)
+        guardar_dados_cliente_sql(dados_json)
+        return dados_json
 
 def guardar_dados_cliente(dados):
     with open(DADOS_CLIENTE_FILE, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=2)
+    return {"glicemias": [], "feedbacks": []}
 
 if "dados_cliente" not in st.session_state:
     st.session_state.dados_cliente = carregar_dados_cliente()
+    inicializar_bd()
+    st.session_state.dados_cliente = migrar_dados_cliente_json_para_sql_se_necessario()
 
 # ============================================================
 # NAVEGAÇÃO
@@ -146,18 +256,7 @@ st.sidebar.caption(f"Sessões registadas: **{sessoes_concluidas}/{PROGRAMA_SEMAN
 if perfil == "👤 Cliente — José":
     st.title(f"Olá, {PACIENTE['nome'].split()[0]} 👋")
     st.caption(f"Semana {df_sessoes['semana'].max()} do seu programa de reabilitação")
-
-    # --- PROGRESSO GERAL ---
-    progresso = sessoes_concluidas / (PROGRAMA_SEMANAS * SESSOES_POR_SEMANA)
-    st.progress(progresso, text=f"{int(progresso * 100)}% do programa concluído")
-
-    st.markdown("---")
-
-    # --- CHECK-UP PRÉ-TREINO ---
-    st.subheader("🩺 Check-up Pré-Treino")
-    c1, c2 = st.columns([2, 1])
-
-    with c1:
+@@ -161,63 +307,63 @@ if perfil == "👤 Cliente — José":
         glicose = st.number_input(
             "A sua glicemia agora (mg/dL):",
             min_value=40, max_value=500, value=120, step=1,
@@ -184,6 +283,7 @@ if perfil == "👤 Cliente — José":
                 "pode_treinar": pode_treinar,
             })
             guardar_dados_cliente(st.session_state.dados_cliente)
+            guardar_dados_cliente_sql(st.session_state.dados_cliente)
             st.toast("Medição guardada ✅")
 
     st.markdown("---")
@@ -196,6 +296,7 @@ if perfil == "👤 Cliente — José":
     fai_atual = df_sessoes.iloc[-1]["fai"]
     vo2_inicial = df_sessoes.iloc[0]["vo2_máx"]
     vo2_atual = df_sessoes.iloc[-1]["vo2_estimado"]
+    vo2_atual = df_sessoes.iloc[-1]["vo2_máx"]
     fc_rep_inicial = df_sessoes.iloc[0]["fc_repouso"]
     fc_rep_atual = df_sessoes.iloc[-1]["fc_repouso"]
 
@@ -221,11 +322,7 @@ if perfil == "👤 Cliente — José":
         st.success("**💪 Está a ir bem!**")
         st.write(f"O seu coração em repouso desceu **{fc_rep_inicial - fc_rep_atual} batimentos**.")
         st.write("Isto significa que o seu coração está mais eficiente — bombeia mais sangue com menos esforço.")
-
-    st.markdown("---")
-
-    # --- FEEDBACK PÓS-SESSÃO ---
-    st.subheader("💬 Como correu o seu último treino?")
+@@ -229,103 +375,103 @@ if perfil == "👤 Cliente — José":
     with st.form("feedback_form", clear_on_submit=True):
         col_f1, col_f2 = st.columns(2)
         with col_f1:
@@ -252,6 +349,7 @@ if perfil == "👤 Cliente — José":
                 "notas": notas,
             })
             guardar_dados_cliente(st.session_state.dados_cliente)
+            guardar_dados_cliente_sql(st.session_state.dados_cliente)
             st.success("✅ Feedback enviado! A equipa vai rever antes da próxima sessão.")
 
 # ============================================================
@@ -290,6 +388,8 @@ else:
         col1.metric("Sessões concluídas", f"{len(df_sessoes)}/{PROGRAMA_SEMANAS * SESSOES_POR_SEMANA}")
         col2.metric("VO₂ atual", f"{df_sessoes.iloc[-1]['vo2_estimado']:.1f} ml/kg/min",
                     f"+{df_sessoes.iloc[-1]['vo2_estimado'] - df_sessoes.iloc[0]['vo2_estimado']:.1f}")
+        col2.metric("VO₂máx atual", f"{df_sessoes.iloc[-1]['vo2_máx']:.1f} ml/kg/min",
+                    f"+{df_sessoes.iloc[-1]['vo2_máx'] - df_sessoes.iloc[0]['vo2_máx']:.1f}")
         col3.metric("FAI atual", f"{df_sessoes.iloc[-1]['fai']:.1f}%",
                     f"{df_sessoes.iloc[-1]['fai'] - df_sessoes.iloc[0]['fai']:.1f} pp",
                     delta_color="inverse")
@@ -304,6 +404,8 @@ else:
         fig.add_trace(go.Scatter(
             x=df_sessoes["data"], y=df_sessoes["vo2_estimado"],
             name="VO₂ estimado", line=dict(color="#2F5597", width=2.5),
+            x=df_sessoes["data"], y=df_sessoes["vo2_máx"],
+            name="VO₂máx", line=dict(color="#2F5597", width=2.5),
             yaxis="y1",
         ))
         fig.add_trace(go.Scatter(
@@ -329,11 +431,7 @@ else:
                            color_discrete_sequence=["#2F5597"])
             fig2.update_traces(line_width=2.5)
             fig2.update_layout(height=320, showlegend=False)
-            st.plotly_chart(fig2, use_container_width=True)
-
-        with col_g2:
-            df_pse = df_sessoes.groupby("semana")[["pse_durante", "pse_apos"]].mean().reset_index()
-            fig3 = go.Figure()
+@@ -337,51 +483,51 @@ else:
             fig3.add_trace(go.Scatter(x=df_pse["semana"], y=df_pse["pse_durante"], name="PSE durante", line=dict(color="#FF9900", width=2.5)))
             fig3.add_trace(go.Scatter(x=df_pse["semana"], y=df_pse["pse_apos"], name="PSE após", line=dict(color="#A2AD00", width=2.5)))
             fig3.update_layout(title="Esforço percebido (Borg) por semana", xaxis_title="Semana",
@@ -360,6 +458,7 @@ else:
         col2.metric("FC média durante", f"{s['fc_media_durante']} bpm")
         col3.metric("FC pico", f"{s['fc_pico']} bpm")
         col4.metric("VO₂ estimado", f"{s['vo2_estimado']:.1f}")
+        col4.metric("VO₂máx", f"{s['vo2_máx']:.1f}")
 
         col5, col6, col7, col8 = st.columns(4)
         col5.metric("PA antes", s["pa_antes"])
@@ -385,41 +484,7 @@ else:
         else:
             fai_cor, fai_desc = "#FF3300", "Comprometimento Marcado"
 
-        fig_fai = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=fai_val,
-            title={"text": f"FAI — {fai_desc}"},
-            gauge={
-                "axis": {"range": [0, 100]},
-                "bar": {"color": fai_cor},
-                "steps": [
-                    {"range": [0, 27], "color": "#E8F5E9"},
-                    {"range": [27, 40], "color": "#FFFDE7"},
-                    {"range": [40, 100], "color": "#FFEBEE"},
-                ],
-            },
-        ))
-        fig_fai.update_layout(height=280, margin=dict(l=20, r=20, t=50, b=20))
-        st.plotly_chart(fig_fai, use_container_width=True)
-
-    # ========== TAB 3: MARCADORES METABÓLICOS ==========
-    with tab_metab:
-        st.subheader("Marcadores metabólicos e cardiovasculares")
-
-        # HbA1c
-        df_hba1c = df_sessoes[df_sessoes["hba1c"].notna()][["data", "hba1c"]]
-        fig_hba1c = go.Figure()
-        fig_hba1c.add_trace(go.Scatter(x=df_hba1c["data"], y=df_hba1c["hba1c"],
-                                       mode="lines+markers", name="HbA1c",
-                                       line=dict(color="#C00000", width=2.5)))
-        fig_hba1c.add_hline(y=7.0, line_dash="dash", line_color="green", annotation_text="Alvo < 7.0%")
-        fig_hba1c.update_layout(title="Evolução da HbA1c (%)", xaxis_title="Data",
-                                yaxis_title="HbA1c (%)", height=320)
-        st.plotly_chart(fig_hba1c, use_container_width=True)
-
-        # Glicemia pré vs pós-treino
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
+@@ -423,31 +569,31 @@ else:
             df_glic = df_sessoes.groupby("semana")[["glic_antes", "glic_apos"]].mean().reset_index()
             fig_g = go.Figure()
             fig_g.add_trace(go.Scatter(x=df_glic["semana"], y=df_glic["glic_antes"], name="Pré-treino", line=dict(color="#2F5597")))
@@ -446,6 +511,7 @@ else:
         st.subheader("📋 Resumo clínico")
         st.markdown(f"""
         - **Capacidade aeróbia:** {df_sessoes.iloc[0]['vo2_estimado']:.1f} → **{df_sessoes.iloc[-1]['vo2_estimado']:.1f} ml/kg/min** (+{df_sessoes.iloc[-1]['vo2_estimado'] - df_sessoes.iloc[0]['vo2_estimado']:.1f})
+        - **Capacidade aeróbia:** {df_sessoes.iloc[0]['vo2_máx']:.1f} → **{df_sessoes.iloc[-1]['vo2_máx']:.1f} ml/kg/min** (+{df_sessoes.iloc[-1]['vo2_máx'] - df_sessoes.iloc[0]['vo2_máx']:.1f})
         - **FAI:** {df_sessoes.iloc[0]['fai']:.1f}% → **{df_sessoes.iloc[-1]['fai']:.1f}%** ({df_sessoes.iloc[-1]['fai'] - df_sessoes.iloc[0]['fai']:.1f} pp)
         - **FC repouso:** {df_sessoes.iloc[0]['fc_repouso']} → **{df_sessoes.iloc[-1]['fc_repouso']} bpm**
         - **HbA1c:** {df_hba1c.iloc[0]['hba1c']:.1f}% → **{df_hba1c.iloc[-1]['hba1c']:.1f}%**
