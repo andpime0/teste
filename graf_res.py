@@ -4,185 +4,171 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import json
-import os
 import sqlite3
+import json
 
-# Configuração da página
-st.set_page_config(
-    page_title="BestCare | José Oliveira",
-    page_icon="🫀",
-    layout="wide",
-)
+# --- CONFIGURAÇÃO ---
+st.set_page_config(page_title="BestCare Pro | José Oliveira", page_icon="🧪", layout="wide")
 
-# ============================================================
-# DADOS CLÍNICOS E CONSTANTES
-# ============================================================
+# --- ESTILO CSS PARA OS GRÁFICOS ---
+st.markdown("""<style> .main { background-color: #f5f7f9; } .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); } </style>""", unsafe_allow_html=True)
+
+# --- DADOS CLÍNICOS E CÁLCULOS ACSM ---
 PACIENTE = {
-    "nome": "José Oliveira",
-    "idade": 55,
-    "sexo": "Masculino",
-    "altura_cm": 174,
-    "peso_kg": 88,
-    "historial": "Pós-EAM (4 meses) com colocação de stent. Diabetes tipo II.",
-    "medicacao": ["Beta-bloqueador (Bisoprolol 5mg)", "Estatina (Atorvastatina 40mg)", "Metformina 1000mg"],
-    "fc_max_teste": 145,
-    "fc_repouso_inicial": 78,
-    "vo2_inicial": 27.2,
-    "vo2_previsto": 35.4,
-    "hba1c_inicial": 7.8,
-    "data_inicio": datetime(2026, 2, 16),
+    "nome": "José Oliveira", "idade": 55, "fc_max_teste": 145, "fc_rep_inicial": 78,
+    "vo2_inicial": 27.2, "vo2_prev": 35.4, "hba1c_inicial": 7.8
 }
 
-PROGRAMA_SEMANAS = 12
-SESSOES_POR_SEMANA = 3
-DB_FILE = "bestcare_jose.db"
+def calcular_karvonen(intensidade, fc_rep):
+    # Fórmula de Karvonen para Zonas Alvo
+    fcr = PACIENTE["fc_max_teste"] - fc_rep
+    return int((fcr * intensidade) + fc_rep)
 
-# ============================================================
-# FUNÇÕES DE BASE DE DADOS (SQLITE)
-# ============================================================
-def get_db_connection():
-    return sqlite3.connect(DB_FILE)
-
+# --- BASE DE DADOS EVOLUÍDA ---
 def inicializar_bd():
-    with get_db_connection() as conn:
-        # Tabela de Sessões
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS sessoes_jose (
-                sessao_n INTEGER PRIMARY KEY,
-                data TEXT, semana INTEGER, tipo TEXT, duracao_min INTEGER,
-                fc_repouso INTEGER, fc_media_durante INTEGER, fc_pico INTEGER,
-                vo2_max REAL, fai REAL, pa_antes TEXT, pa_apos TEXT,
-                glic_antes INTEGER, glic_apos INTEGER, pse_durante INTEGER,
-                pse_apos INTEGER, sintomas TEXT, hba1c REAL
-            )
-        """)
-        # Tabela de Glicemias (Registadas pelo Cliente)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS glicemias_jose (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                data TEXT, valor INTEGER, pode_treinar INTEGER
-            )
-        """)
-        # Tabela de Feedbacks (Borg)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS feedbacks_jose (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                data TEXT, borg INTEGER, sintomas TEXT, notas TEXT
-            )
-        """)
+    conn = sqlite3.connect("bestcare_v2.db")
+    cursor = conn.cursor()
+    # Tabela principal com métricas de força (Reps, RiR, Séries)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sessoes_v2 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data TEXT, semana INTEGER, tipo TEXT,
+            fc_media INTEGER, pse INTEGER, 
+            reps_total INTEGER, series_total INTEGER, rir_medio INTEGER,
+            glic_antes INTEGER, glic_apos INTEGER,
+            relatorio TEXT
+        )
+    """)
+    conn.commit()
+    return conn
 
+# --- GERAÇÃO DE DADOS HISTÓRICOS (INCLUINDO FORÇA) ---
 @st.cache_data
-def gerar_evolucao_ficticia():
-    np.random.seed(42)
+def carregar_dados_iniciais():
+    df = pd.DataFrame()
     sessoes = []
-    data_atual = PACIENTE["data_inicio"]
-    for sem in range(PROGRAMA_SEMANAS):
-        fator = sem / (PROGRAMA_SEMANAS - 1)
-        for s in range(SESSOES_POR_SEMANA):
-            vo2_base = PACIENTE["vo2_inicial"] + 6.5 * fator
-            sessoes.append({
-                "sessao_n": len(sessoes) + 1,
-                "data": data_atual.strftime("%Y-%m-%d"),
-                "semana": sem + 1,
-                "tipo": "Aeróbio contínuo" if sem < 4 else "Intervalado",
-                "duracao_min": int(25 + 20 * fator),
-                "fc_repouso": int(PACIENTE["fc_repouso_inicial"] - 10 * fator),
-                "fc_media_durante": int(110 + 10 * fator),
-                "fc_pico": int(125 + 10 * fator),
-                "vo2_max": round(vo2_base + np.random.normal(0, 0.3), 1),
-                "fai": round(((PACIENTE["vo2_previsto"] - vo2_base) / PACIENTE["vo2_previsto"]) * 100, 1),
-                "pa_antes": f"{int(130-5*fator)}/{int(85-3*fator)}",
-                "pa_apos": f"{int(140-5*fator)}/{int(88-3*fator)}",
-                "glic_antes": int(140 - 20 * fator),
-                "glic_apos": int(115 - 20 * fator),
-                "pse_durante": int(12 + fator * 2),
-                "pse_apos": int(11 + fator * 1),
-                "sintomas": "Nenhum",
-                "hba1c": round(PACIENTE["hba1c_inicial"] - 1.0 * fator, 2) if s == 0 and sem % 4 == 0 else None
-            })
-            data_atual += timedelta(days=2)
+    hoje = datetime.now()
+    for i in range(1, 25): # 24 sessões anteriores (8 semanas)
+        fator = i / 24
+        sessoes.append({
+            "data": (hoje - timedelta(days=(25-i)*2)).strftime("%Y-%m-%d"),
+            "semana": (i // 3) + 1,
+            "tipo": "Misto (Aeróbio + Força)",
+            "fc_media": int(105 + 15 * fator),
+            "pse": int(14 - 3 * fator + np.random.randint(-1, 2)),
+            "reps_total": int(80 + 40 * fator),
+            "series_total": 8,
+            "rir_medio": int(4 - 2 * fator), # RiR diminui conforme a carga aumenta
+            "glic_antes": int(145 - 20 * fator),
+            "glic_apos": int(110 - 15 * fator),
+            "relatorio": f"Sessão {i}: Adaptação hemodinâmica estável."
+        })
     return pd.DataFrame(sessoes)
 
-def obter_dados_sessoes():
-    inicializar_bd()
-    with get_db_connection() as conn:
-        df = pd.read_sql_query("SELECT * FROM sessoes_jose", conn)
-    if df.empty:
-        df_novo = gerar_evolucao_ficticia()
-        df_novo.to_sql("sessoes_jose", get_db_connection(), if_exists="replace", index=False)
-        return df_novo
-    df["data"] = pd.to_datetime(df["data"])
-    return df
+# --- INTERFACE ---
+conn = inicializar_bd()
+df_hist = carregar_dados_iniciais()
 
-# Carregamento inicial
-df_sessoes = obter_dados_sessoes()
+st.sidebar.title("🧪 BestCare System")
+menu = st.sidebar.selectbox("Navegação:", ["🚀 Modo Treino (Zonas Alvo)", "📈 Evolução & Heatmap", "📋 Histórico de Relatórios"])
 
 # ============================================================
-# SIDEBAR / NAVEGAÇÃO
+# 1. MODO TREINO (ZONAS ALVO EM TEMPO REAL)
 # ============================================================
-st.sidebar.title("🫀 BestCare")
-perfil = st.sidebar.radio("Ver como:", ["👤 Cliente (José)", "🩺 Equipa Clínica"])
+if menu == "🚀 Modo Treino (Zonas Alvo)":
+    st.title("🚀 Prescrição em Tempo Real")
+    st.caption("Fase Atual: Progressão de Intensidade (Semanas 5-8)")
 
-# ============================================================
-# PERFIL CLIENTE
-# ============================================================
-if perfil == "👤 Cliente (José)":
-    st.title(f"Olá, {PACIENTE['nome']} 👋")
-    
     col1, col2 = st.columns(2)
+    
     with col1:
-        st.subheader("Registar Glicemia Pré-Treino")
-        glic = st.number_input("Valor (mg/dL):", 40, 400, 120)
-        if st.button("Guardar Medição"):
-            with get_db_connection() as conn:
-                conn.execute("INSERT INTO glicemias_jose (data, valor, pode_treinar) VALUES (?, ?, ?)",
-                            (datetime.now().strftime("%Y-%m-%d %H:%M"), glic, 1 if 100 <= glic <= 250 else 0))
-            st.success("Medição guardada!")
+        st.subheader("🏃 Alvo Aeróbio (Karvonen)")
+        # Zona 40-59% FCR
+        min_fc = calcular_karvonen(0.40, 72)
+        max_fc = calcular_karvonen(0.59, 72)
+        
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = (min_fc + max_fc) / 2,
+            title = {'text': "FC Alvo (bpm)"},
+            gauge = {
+                'axis': {'range': [60, 150]},
+                'bar': {'color': "#2F5597"},
+                'steps': [
+                    {'range': [60, min_fc], 'color': "#e8f0fe"},
+                    {'range': [min_fc, max_fc], 'color': "#c6f6d5"},
+                    {'range': [max_fc, 150], 'color': "#fed7d7"}
+                ],
+                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': max_fc}
+            }
+        ))
+        st.plotly_chart(fig_gauge, use_container_width=True)
+        st.info(f"Mantenha a pulsação entre **{min_fc}** e **{max_fc}** bpm.")
 
     with col2:
-        st.subheader("Objetivo da Semana")
-        st.info(f"Semana {df_sessoes['semana'].max()}: Realizar 3 sessões de 45 min a intensidade moderada.")
+        st.subheader("🏋️ Alvo Força (RiR & PSE)")
+        st.write("**Protocolo:** 2-3 séries por exercício")
+        st.metric("Alvo de Repetições", "12 - 15")
+        st.metric("RiR (Reps em Reserva)", "2 - 3", help="Deve terminar a série sentindo que ainda conseguia fazer mais 2 ou 3 reps.")
+        st.warning("⚠️ **Nota:** Evitar a manobra de Valsalva (não sustenha a respiração).")
+
+    # REGISTO DE SESSÃO
+    st.divider()
+    with st.form("registo_sessao"):
+        st.subheader("📝 Finalizar e Gerar Relatório de Sessão")
+        c1, c2, c3 = st.columns(3)
+        g_antes = c1.number_input("Glicemia Antes", 40, 300, 120)
+        g_apos = c2.number_input("Glicemia Após", 40, 300, 100)
+        pse_final = c3.slider("PSE Final (Borg 6-20)", 6, 20, 13)
+        
+        ca, cb, cc = st.columns(3)
+        reps = ca.number_input("Total de Reps Efetuadas", 0, 300, 120)
+        rir = cb.slider("RiR Médio Sentido", 0, 5, 2)
+        notas = cc.text_area("Notas da sessão")
+        
+        if st.form_submit_button("💾 Guardar e Gerar Relatório"):
+            relatorio_texto = f"O José completou {reps} repetições com RiR de {rir}. Glicemia estável (Variação: {g_apos - g_antes}mg/dL). PSE de {pse_final} condizente com a fase."
+            # Inserir no SQL
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO sessoes_v2 (data, semana, tipo, fc_media, pse, reps_total, series_total, rir_medio, glic_antes, glic_apos, relatorio) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                           (datetime.now().strftime("%Y-%m-%d"), 8, "Misto", 115, pse_final, reps, 8, rir, g_antes, g_apos, relatorio_texto))
+            conn.commit()
+            st.success("Sessão guardada com sucesso! Relatório gerado.")
 
 # ============================================================
-# PERFIL EQUIPA CLÍNICA
+# 2. EVOLUÇÃO & HEATMAP (VISÃO INOVADORA)
+# ============================================================
+elif menu == "📈 Evolução & Heatmap":
+    st.title("📊 Análise de Padrões e Evolução")
+    
+    # Heatmap PSE vs Volume
+    st.subheader("🔥 Heatmap: Relação Esforço (PSE) vs Volume de Carga")
+    fig_heat = px.density_heatmap(df_hist, x="reps_total", y="pse", z="fc_media",
+                                  labels={'reps_total': 'Volume (Total Reps)', 'pse': 'Esforço (PSE)'},
+                                  color_continuous_scale="Viridis", text_auto=True)
+    st.plotly_chart(fig_heat, use_container_width=True)
+    st.caption("Este gráfico ajuda a detetar se o José está a reportar mais esforço para a mesma carga (sinal de fadiga).")
+
+    # Gráfico de Relação FC, PSE e RiR
+    st.subheader("🔗 Relação FC, PSE e RiR ao longo das Sessões")
+    fig_evol = go.Figure()
+    fig_evol.add_trace(go.Scatter(x=df_hist.index, y=df_hist["fc_media"], name="FC Média", line=dict(color="#2F5597")))
+    fig_evol.add_trace(go.Scatter(x=df_hist.index, y=df_hist["pse"]*8, name="PSE (Escalado)", line=dict(color="#E46C0A")))
+    fig_evol.add_trace(go.Scatter(x=df_hist.index, y=df_hist["rir_medio"]*20, name="RiR (Escalado)", line=dict(color="#A2AD00", dash='dot')))
+    
+    fig_evol.update_layout(title="Interação entre Marcadores Fisiológicos e Subjetivos", xaxis_title="Número da Sessão")
+    st.plotly_chart(fig_evol, use_container_width=True)
+
+# ============================================================
+# 3. HISTÓRICO DE RELATÓRIOS
 # ============================================================
 else:
-    st.title("🩺 Painel de Monitorização Clínica")
+    st.title("📋 Arquivo de Relatórios de Sessão")
+    cursor = conn.cursor()
+    cursor.execute("SELECT data, relatorio, pse, rir_medio FROM sessoes_v2 ORDER BY id DESC")
+    logs = cursor.fetchall()
     
-    # Métricas de topo
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("VO₂máx Atual", f"{df_sessoes.iloc[-1]['vo2_max']} ml/kg/min")
-    m2.metric("FAI (Défice)", f"{df_sessoes.iloc[-1]['fai']}%", delta="-5%", delta_color="inverse")
-    m3.metric("FC Repouso", f"{df_sessoes.iloc[-1]['fc_repouso']} bpm")
-    m4.metric("Sessões", f"{len(df_sessoes)}/36")
-
-    # --- GRÁFICO 1: VO2 e FAI ---
-    st.subheader("Evolução Funcional (VO₂máx vs FAI)")
-    fig_func = go.Figure()
-    fig_func.add_trace(go.Scatter(x=df_sessoes["data"], y=df_sessoes["vo2_max"], name="VO₂máx", line=dict(color="#2F5597", width=3)))
-    fig_func.add_trace(go.Scatter(x=df_sessoes["data"], y=df_sessoes["fai"], name="FAI (%)", yaxis="y2", line=dict(color="#C00000", dash="dot")))
-    fig_func.update_layout(yaxis2=dict(overlaying="y", side="right"), hovermode="x unified")
-    st.plotly_chart(fig_func, use_container_width=True)
-
-    # --- GRÁFICOS 2 e 3: METABÓLICO ---
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.subheader("Pressão Arterial Sistólica")
-        df_sessoes["pas_antes"] = df_sessoes["pa_antes"].str.split("/").str[0].astype(int)
-        df_sessoes["pas_apos"] = df_sessoes["pa_apos"].str.split("/").str[0].astype(int)
-        fig_pa = px.line(df_sessoes, x="data", y=["pas_antes", "pas_apos"], 
-                         labels={"value": "mmHg", "variable": "Momento"},
-                         color_discrete_map={"pas_antes": "#2F5597", "pas_apos": "#E46C0A"})
-        st.plotly_chart(fig_pa, use_container_width=True)
-
-    with c2:
-        st.subheader("Controlo Glicémico (Sessões)")
-        fig_glic = px.bar(df_sessoes, x="data", y=["glic_antes", "glic_apos"], barmode="group",
-                          color_discrete_sequence=["#2F5597", "#A2AD00"])
-        st.plotly_chart(fig_glic, use_container_width=True)
-
-    # Tabela de Dados
-    with st.expander("Ver Histórico de Sessões Completo"):
-        st.dataframe(df_sessoes.sort_values("sessao_n", ascending=False))
+    for log in logs:
+        with st.expander(f"📅 Sessão: {log[0]} | PSE: {log[2]} | RiR: {log[3]}"):
+            st.write(log[1])
+            st.download_button("Exportar PDF (Simulado)", "Conteúdo do relatório...", file_name=f"relatorio_{log[0]}.txt")
