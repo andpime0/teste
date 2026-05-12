@@ -32,8 +32,6 @@ PACIENTE = {
     "hba1c_inicial": 7.8,
     "data_inicio": datetime(2026, 2, 16),
 }
-@@ -80,69 +81,214 @@ def gerar_evolucao_jose():
-
             sessoes.append({
                 "data": data_atual,
                 "semana": sem + 1,
