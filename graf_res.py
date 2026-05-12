@@ -8,7 +8,7 @@ import json
 import os
 
 st.set_page_config(
-    page_title="CardioRehab | José Oliveira",
+    page_title="BestCare | José Oliveira",
     page_icon="🫀",
     layout="wide",
 )
@@ -125,8 +125,8 @@ if "dados_cliente" not in st.session_state:
 # ============================================================
 # NAVEGAÇÃO
 # ============================================================
-st.sidebar.markdown("# 🫀 CardioRehab")
-st.sidebar.caption("Sistema de reabilitação cardíaca")
+st.sidebar.markdown("# 🫀 BestCare")
+st.sidebar.caption("Reabilitação Funcional")
 st.sidebar.markdown("---")
 
 perfil = st.sidebar.radio(
