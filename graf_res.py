@@ -194,7 +194,7 @@ if perfil == "👤 Cliente — José":
     col_a, col_b, col_c = st.columns(3)
     fai_inicial = df_sessoes.iloc[0]["fai"]
     fai_atual = df_sessoes.iloc[-1]["fai"]
-    vo2_inicial = df_sessoes.iloc[0]["vo2_estimado"]
+    vo2_inicial = df_sessoes.iloc[0]["vo2_máx"]
     vo2_atual = df_sessoes.iloc[-1]["vo2_estimado"]
     fc_rep_inicial = df_sessoes.iloc[0]["fc_repouso"]
     fc_rep_atual = df_sessoes.iloc[-1]["fc_repouso"]
