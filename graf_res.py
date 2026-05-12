@@ -87,7 +87,7 @@ def gerar_evolucao_jose():
                 "fc_repouso": int(fc_repouso_base + np.random.normal(0, 1.5)),
                 "fc_media_durante": fc_durante,
                 "fc_pico": fc_durante + int(np.random.normal(8, 3)),
-                "vo2_estimado": round(vo2_base + np.random.normal(0, 0.4), 1),
+                "vo2_máx": round(vo2_base + np.random.normal(0, 0.4), 1),
                 "fai": round(fai_base + np.random.normal(0, 0.6), 1),
                 "pa_antes": f"{pa_sis_antes}/{pa_dia_antes}",
                 "pa_apos": f"{pa_sis_apos}/{pa_dia_apos}",
