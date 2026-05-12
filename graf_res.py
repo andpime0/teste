@@ -1,4 +1,3 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/graf_res.py b/graf_res.py
 index 431cd6c7fa8fc03b33a511c5a4b907f97c8724eb..78b7eee99db0a7c32fe277988686836ac977423d 100644
 --- a/graf_res.py
@@ -599,6 +598,3 @@ index 431cd6c7fa8fc03b33a511c5a4b907f97c8724eb..78b7eee99db0a7c32fe277988686836a
          - **HbA1c:** {df_hba1c.iloc[0]['hba1c']:.1f}% → **{df_hba1c.iloc[-1]['hba1c']:.1f}%**
          - **Adesão:** {len(df_sessoes)}/{PROGRAMA_SEMANAS * SESSOES_POR_SEMANA} sessões ({len(df_sessoes)/(PROGRAMA_SEMANAS * SESSOES_POR_SEMANA)*100:.0f}%)
          """)
- 
-EOF
-)
