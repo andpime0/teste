@@ -232,6 +232,6 @@ if user_role == "👤 Área do Cliente (José)":
                 ["6","Abdominal Crunch","Core","1-2","10-15","60-90\""]],
                 columns=["Ordem","Exercício","Grupo","Séries","Reps","Recuperação"])
         else:
-            aer = pd.DataFrame([]
+            aer = pd.DataFrame([])
                 ["Aquecimento Geral","Bicicleta estática","5-10 min","PSE 6-10","-"],
                 
