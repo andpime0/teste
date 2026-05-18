@@ -143,7 +143,7 @@ def gerar_calendario():
 PLANO = gerar_calendario()
 
 # ---------- SIDEBAR ----------
-st.sidebar.image("[cdn-icons-png.flaticon.com](https://cdn-icons-png.flaticon.com/512/822/822118.png)", width=80)
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/822/822118.png", width=80)
 st.sidebar.title("BestCare Pro")
 user_role = st.sidebar.radio("Portal:", ["👤 Área do Cliente (José)", "🩺 Área Clínica (Equipa)"])
 
