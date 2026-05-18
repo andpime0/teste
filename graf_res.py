@@ -67,22 +67,37 @@ def seed_se_vazio(conn):
     c.execute("SELECT COUNT(*) FROM sessoes_v3")
     if c.fetchone()[0] > 0:
         return
-        
-    hoje = date.today()
-    rng = np.random.default_rng(42)
     
+    hoje = date.today()
+    rng = np.random.default_rng(42)  # Gerador de números aleatórios
+
     for i in range(1, 16):
         f = i/15
         fase = "Inicial" if i <= 6 else "Desenvolvimento"
         
-        # ... (teu código de cálculo de variáveis: fc_media, pa_sist_pre, n_ex, etc) ...
-        # Exemplo das variáveis que calculaste:
-        n_ex = 6 if fase == "Inicial" else 7 
-        glic_a = 150 # etc...
-
-        data_s = (hoje - timedelta(days=(16-i)*2)).isoformat()
+        # --- CÁLCULOS QUE ESTAVAM EM FALTA ---
+        fc_alvo = 101 + (127-101)*f
+        fc_media = int(fc_alvo + rng.normal(0, 3))
+        fc_pico = fc_media + int(rng.integers(8, 15))
         
-        # O SQL usa os nomes da TABELA. O tuplo no fim usa as tuas VARIÁVEIS.
+        pa_sist_pre = int(134 + rng.normal(0, 4))
+        pa_diast_pre = int(84 + rng.normal(0, 3))
+        delta_sist = int(18 - 6*f + rng.normal(0, 3))
+        delta_diast = int(2 + rng.normal(0, 2))
+        pa_sist_pos = pa_sist_pre + delta_sist
+        pa_diast_pos = pa_diast_pre + delta_diast
+        
+        pse = int(round(15 - 3*f + rng.normal(0, 0.4)))
+        reps = int(80 + 70*f + rng.integers(-10, 10))
+        series = 9 if fase == "Inicial" else 12
+        n_ex = 6 if fase == "Inicial" else 7
+        glic_a = int(150 - 25*f + rng.normal(0, 8))
+        glic_p = int(115 - 15*f + rng.normal(0, 6))
+        rir = int(round(4 - 2*f))
+        
+        data_s = (hoje - timedelta(days=(16-i)*2)).isoformat()
+        # ---------------------------------------
+
         c.execute("""INSERT INTO sessoes_v3
             (data, semana, fase, tipo, fc_media, fc_pico,
              pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
@@ -93,6 +108,7 @@ def seed_se_vazio(conn):
              pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
              pse, reps, series, n_ex, glic_a, glic_p, rir,
              f"Sessão {i} ({fase}): resposta hemodinâmica estável.",))
+    
     conn.commit()
 
 def carregar_sessoes(conn):
