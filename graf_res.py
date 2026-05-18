@@ -220,23 +220,249 @@ if user_role == "👤 Área do Cliente (José)":
                         st.markdown(f'<div class="cal-day cal-rest"><b>{nome} {d.day}</b><br>'
                                     f'<small>Descanso</small></div>', unsafe_allow_html=True)
 
-    # --- Plano de treino ---
+      # --- Plano de treino ---
     with tabs[2]:
         fase_sel = st.radio("Fase do plano:", ["Inicial", "Desenvolvimento"], horizontal=True)
         st.subheader(f"Sessão tipo — Fase {fase_sel}")
+
         if fase_sel == "Inicial":
             aer = pd.DataFrame([
-                ["Aquecimento Geral","Bicicleta estática","5-10 min","PSE 6-10","-"],
-                ["Aeróbio","Caminhada (lenta)","30 min","PSE 11-12 (leve)","-"],
-                ["Alongamentos","Tai-chi","10 min","PSE 6","-"]],
-                columns=["Fase","Tipo","Tempo","Intensidade","Recuperação"])
+                ["Aquecimento Geral", "Bicicleta estática", "5-10 min", "PSE 6-10 (muito leve)", "-"],
+                ["Aeróbio",           "Caminhada (lenta)",  "30 min",   "PSE 11-12 (leve)",      "-"],
+                ["Alongamentos",      "Tai-chi",            "10 min",   "PSE 6 (muito leve)",    "-"],
+            ], columns=["Fase", "Tipo", "Tempo", "Intensidade", "Recuperação"])
+
             forca = pd.DataFrame([
-                ["1","Agachamento (Smith)","Quadrícepe","1-2","10-15","60-90\""],
-                ["2","Lat Pulldown","Dorsal","1-2","10-15","60-90\""],
-                ["3","Bench Press (Smith)","Peitoral","1-2","10-15","60-90\""],
-                ["4","DB Bicep Curl","Bícepe","1-2","10-15","60-90\""],
-                ["5","Tricep Extension","Trícepe","1-2","10-15","60-90\""],
-                ["6","Abdominal Crunch","Core","1-2","10-15","60-90\""]],
-                columns=["Ordem","Exercício","Grupo","Séries","Reps","Recuperação"])
+                ["Aq. específico", "Agachamento (Smith)",   "Quadrícepe", "1-2", "3-4 (80% carga)", "60-90\""],
+                ["1", "Agachamento (Smith)",                "Quadrícepe", "1-2", "10-15",           "60-90\""],
+                ["2", "Lat Pulldown",                       "Dorsal",     "1-2", "10-15",           "60-90\""],
+                ["3", "Bench Press (Smith)",                "Peitoral",   "1-2", "10-15",           "60-90\""],
+                ["4", "DB Bicep Curl",                      "Bícepe",     "1-2", "10-15",           "60-90\""],
+                ["5", "Tricep Extension (polia)",           "Trícepe",    "1-2", "10-15",           "60-90\""],
+                ["6", "Abdominal Crunch",                   "Core",       "1-2", "10-15",           "60-90\""],
+            ], columns=["Ordem", "Exercício", "Grupo Muscular", "Séries", "Repetições", "Recuperação"])
         else:
-            aer = pd.DataFrame(["Aquecimento Geral","Bicicleta estática","5-10 min","PSE 6-10","-"])
+            aer = pd.DataFrame([
+                ["Aquecimento Geral", "Bicicleta estática", "5-10 min", "PSE 6-10 (muito leve)",  "-"],
+                ["Aeróbio",           "Caminhada (normal)", "30 min",   "PSE 14-17 (moderado)",   "-"],
+                ["Alongamentos",      "Tai-chi",            "10 min",   "PSE 6 (muito leve)",     "-"],
+            ], columns=["Fase", "Tipo", "Tempo", "Intensidade", "Recuperação"])
+
+            forca = pd.DataFrame([
+                ["Aq. específico", "Agachamento (Smith)",   "Quadrícepe", "1-3", "3-4 (80% carga)", "90\"-3'"],
+                ["1", "Agachamento (Smith)",                "Quadrícepe", "1-3", "10-12",           "90\"-3'"],
+                ["2", "Deadlift",                           "Dorsal",     "1-3", "10-12",           "90\"-3'"],
+                ["3", "Lat Pulldown",                       "Dorsal",     "1-3", "10-12",           "90\"-3'"],
+                ["4", "Bench Press (Smith)",                "Peitoral",   "1-3", "10-12",           "90\"-3'"],
+                ["5", "DB Bicep Curl",                      "Bícepe",     "1-3", "10-12",           "90\"-3'"],
+                ["6", "Tricep Extension (polia)",           "Trícepe",    "1-3", "10-12",           "90\"-3'"],
+                ["7", "Abdominal Crunch",                   "Core",       "1-3", "10-12",           "90\"-3'"],
+            ], columns=["Ordem", "Exercício", "Grupo Muscular", "Séries", "Repetições", "Recuperação"])
+
+        st.markdown("#### 🏃 Treino Aeróbio")
+        st.dataframe(aer, hide_index=True, use_container_width=True)
+
+        st.markdown("#### 🏋️ Treino de Força (antes do aeróbio)")
+        st.dataframe(forca, hide_index=True, use_container_width=True)
+
+        st.caption("Referência: ACSM's Guidelines for Exercise Testing and Prescription, 12.ª ed.")
+
+    # --- A Minha Evolução ---
+    with tabs[3]:
+        st.subheader("📊 O meu progresso ao longo do tempo")
+
+        if df_hist.empty:
+            st.info("Ainda não existem sessões registadas.")
+        else:
+            df_plot = df_hist.copy()
+            df_plot["data"] = pd.to_datetime(df_plot["data"])
+
+            # Glicemia
+            fig_glic = px.line(
+                df_plot, x="data", y=["glic_antes", "glic_apos"],
+                markers=True, title="Glicemia (pré vs pós-treino)",
+                labels={"value": "mg/dL", "data": "Data", "variable": ""},
+            )
+            st.plotly_chart(fig_glic, use_container_width=True)
+
+            # FC média e pico
+            fig_fc = px.line(
+                df_plot, x="data", y=["fc_media", "fc_pico"],
+                markers=True, title="Frequência Cardíaca (média vs pico)",
+                labels={"value": "bpm", "data": "Data", "variable": ""},
+            )
+            st.plotly_chart(fig_fc, use_container_width=True)
+
+            # PA sistólica/diastólica pós-treino
+            fig_pa = go.Figure()
+            fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_sist_pos"],
+                                        mode="lines+markers", name="PA Sistólica (pós)"))
+            fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_diast_pos"],
+                                        mode="lines+markers", name="PA Diastólica (pós)"))
+            fig_pa.update_layout(title="Pressão Arterial pós-treino",
+                                 yaxis_title="mmHg", xaxis_title="Data")
+            st.plotly_chart(fig_pa, use_container_width=True)
+
+            # PSE
+            fig_pse = px.line(df_plot, x="data", y="pse", markers=True,
+                              title="Perceção Subjetiva de Esforço (PSE)",
+                              labels={"pse": "PSE (6-20)", "data": "Data"})
+            st.plotly_chart(fig_pse, use_container_width=True)
+
+    # --- Meus Relatórios ---
+    with tabs[4]:
+        st.subheader("📁 Histórico de Sessões e Relatórios Clínicos")
+        if df_hist.empty:
+            st.info("Sem registos disponíveis.")
+        else:
+            tabela = df_hist[["data", "semana", "fase", "fc_media",
+                              "pa_sist_pos", "pa_diast_pos", "pse",
+                              "glic_antes", "glic_apos", "relatorio_clinico"]].copy()
+            tabela.columns = ["Data", "Semana", "Fase", "FC média (bpm)",
+                              "PA sist. pós", "PA diast. pós", "PSE",
+                              "Glic. antes", "Glic. após", "Relatório Clínico"]
+            st.dataframe(tabela.sort_values("Data", ascending=False),
+                         hide_index=True, use_container_width=True)
+
+        st.divider()
+        st.subheader("📤 Os meus envios ao treinador")
+        df_envios = carregar_reports_cliente(conn)
+        if df_envios.empty:
+            st.caption("Ainda não submeteste nenhum registo nesta sessão.")
+        else:
+            st.dataframe(df_envios[["data_envio", "glic_antes", "pse",
+                                    "reps_total", "comentario"]],
+                         hide_index=True, use_container_width=True)
+
+# ============================================================
+# ÁREA CLÍNICA (EQUIPA)
+# ============================================================
+else:
+    st.title("🩺 Painel de Monitorização Clínica")
+    tabs_clin = st.tabs(["🔥 Análise de Carga (Heatmap)",
+                         "📈 Evolução Biométrica",
+                         "📥 Registos do Cliente",
+                         "📝 Gestão de Relatórios"])
+
+    # --- Heatmap fluido ---
+    with tabs_clin[0]:
+        st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
+        st.caption("Cada ponto = uma sessão. A cor representa a FC média (bpm). "
+                   "Quanto mais o ponto sobe (PSE alta) com volume elevado, maior o risco de fadiga.")
+
+        if df_hist.empty:
+            st.info("Sem dados.")
+        else:
+            df_h = df_hist.copy()
+            df_h["volume_total"] = df_h["reps_total"] * df_h["series_total"]
+
+            # Heatmap interpolado (contour) — espectro contínuo
+            fig_heat = go.Figure(go.Histogram2dContour(
+                x=df_h["volume_total"], y=df_h["pse"],
+                colorscale="RdYlGn_r",
+                contours=dict(coloring="heatmap", showlines=False),
+                ncontours=20,
+                colorbar=dict(title="Densidade de sessões"),
+                opacity=0.85,
+            ))
+            # Pontos reais por cima
+            fig_heat.add_trace(go.Scatter(
+                x=df_h["volume_total"], y=df_h["pse"],
+                mode="markers",
+                marker=dict(size=10, color=df_h["fc_media"],
+                            colorscale="RdYlGn_r", showscale=True,
+                            colorbar=dict(title="FC média (bpm)", x=1.15),
+                            line=dict(color="white", width=1)),
+                text=[f"FC {fc} bpm · PSE {p} · Vol {v}"
+                      for fc, p, v in zip(df_h["fc_media"], df_h["pse"], df_h["volume_total"])],
+                hoverinfo="text", name="Sessões",
+            ))
+            fig_heat.update_layout(
+                xaxis_title="Volume Total de Treino (repetições × séries)",
+                yaxis_title="Esforço Percebido — PSE (6-20)",
+                height=520,
+            )
+            st.plotly_chart(fig_heat, use_container_width=True)
+
+            st.markdown("""
+            **Como ler este gráfico:**
+            - 🟢 **Verde** — Boa relação esforço/volume. O cliente tolera bem a carga.
+            - 🟡 **Amarelo** — Zona de atenção. O esforço percebido começa a subir.
+            - 🔴 **Vermelho** — Esforço alto para o volume executado → possível **fadiga, descompensação ou necessidade de ajuste da prescrição**.
+            
+            > Em termos clínicos: idealmente, à medida que o programa progride, os pontos devem **descer** (PSE menor) para o **mesmo volume** — sinal de adaptação cardiovascular.
+            """)
+
+    # --- Evolução Biométrica ---
+    with tabs_clin[1]:
+        if df_hist.empty:
+            st.info("Sem dados.")
+        else:
+            df_c = df_hist.copy()
+            df_c["data"] = pd.to_datetime(df_c["data"])
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader("FC média vs RiR")
+                fig_rir = go.Figure()
+                fig_rir.add_trace(go.Scatter(x=df_c["data"], y=df_c["fc_media"],
+                                             name="FC Média", mode="lines+markers"))
+                fig_rir.add_trace(go.Bar(x=df_c["data"], y=df_c["rir_medio"],
+                                         name="RiR", opacity=0.4, yaxis="y2"))
+                fig_rir.update_layout(yaxis=dict(title="bpm"),
+                                      yaxis2=dict(title="RiR", overlaying="y",
+                                                  side="right", range=[0, 5]))
+                st.plotly_chart(fig_rir, use_container_width=True)
+
+            with c2:
+                st.subheader("Pressão Arterial (pré vs pós)")
+                fig_pa = go.Figure()
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pre"],
+                                            name="Sist. pré", line=dict(dash="dot")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"],
+                                            name="Sist. pós"))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pre"],
+                                            name="Diast. pré", line=dict(dash="dot")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pos"],
+                                            name="Diast. pós"))
+                fig_pa.update_layout(yaxis_title="mmHg")
+                st.plotly_chart(fig_pa, use_container_width=True)
+
+            st.subheader("Glicemia (pré vs pós)")
+            fig_g = px.bar(df_c, x="data", y=["glic_antes", "glic_apos"],
+                           barmode="group", labels={"value": "mg/dL"})
+            st.plotly_chart(fig_g, use_container_width=True)
+
+    # --- Registos enviados pelo cliente ---
+    with tabs_clin[2]:
+        st.subheader("📥 Submissões do Cliente (BD: reports_cliente)")
+        df_envios = carregar_reports_cliente(conn)
+        if df_envios.empty:
+            st.info("Sem submissões pendentes.")
+        else:
+            st.dataframe(df_envios, hide_index=True, use_container_width=True)
+            st.caption(f"Ficheiro físico: `{DB_PATH}` · Tabela: `reports_cliente`")
+
+    # --- Gestão de Relatórios ---
+    with tabs_clin[3]:
+        st.subheader("✍️ Validar e Publicar Relatório Clínico")
+        with st.form("relatorio_clinico"):
+            ca, cb = st.columns(2)
+            data_s = ca.date_input("Data da Sessão", value=date.today())
+            semana_s = cb.number_input("Semana", 1, 12, 3)
+            fase_s = st.selectbox("Fase", ["Inicial", "Desenvolvimento"])
+            texto = st.text_area("Conclusão Clínica da Sessão")
+            if st.form_submit_button("💾 Guardar e Publicar"):
+                cur = conn.cursor()
+                cur.execute("""INSERT INTO sessoes_v3
+                    (data, semana, fase, tipo, relatorio_clinico, validado)
+                    VALUES (?,?,?,?,?,1)""",
+                    (data_s.isoformat(), int(semana_s), fase_s, "Misto", texto))
+                conn.commit()
+                st.success(f"✅ Relatório de {data_s} publicado na BD.")
+
+        st.divider()
+        st.write("📂 **Últimos registos na BD:**")
+        st.dataframe(df_hist[["data", "semana", "fase", "pse", "fc_media",
+                              "pa_sist_pos", "relatorio_clinico"]].tail(8),
+                     hide_index=True, use_container_width=True)
