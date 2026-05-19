@@ -41,9 +41,11 @@ PACIENTE = {"nome": "José Oliveira", "idade": 55, "fc_max": 145, "fc_rep": 72, 
 DATA_INICIO_PROGRAMA = date.today() - timedelta(weeks=5)
 
 def calc_karvonen(int_min, int_max):
+    # Fixei o limite máximo da intensidade em 70% (0.70) para segurança clínica
     fcr = PACIENTE["fc_max"] - PACIENTE["fc_rep"]
-    return int(fcr*int_min + PACIENTE["fc_rep"]), int(fcr*int_max + PACIENTE["fc_rep"])
-
+    teto_seguro = 0.70 
+    limite_max = min(int_max, teto_seguro)
+    return int(fcr*int_min + PACIENTE["fc_rep"]), int(fcr*limite_max + PACIENTE["fc_rep"])
 DB_PATH = "bestcare_v9.db"
 
 def get_conn():
@@ -91,8 +93,10 @@ def seed_se_vazio(conn):
         pa_sist_pos = int(pa_sist_pre + 16 - (3*f) + rng.normal(0, 3))
         pa_diast_pos = int(pa_diast_pre + 3 + rng.normal(0, 2))
         
-        pse = int(13 + rng.integers(-1, 2)) 
-        if volume > 1500: pse = int(14 + rng.integers(-1, 2))
+        # Limitar PSE para nunca passar de 14 (Moderado - Segurança Clínica)
+        pse = int(13 + rng.integers(-1, 1)) # Mantém flutuação segura entre 12 e 14
+        if volume > 1500: 
+            pse = 14 # Trava nos 14, mesmo com volumes altos
         
         # Adaptação Metabólica
         glic_a = int(145 - 20*f + rng.normal(0, 4))
