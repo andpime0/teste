@@ -428,36 +428,23 @@ else:
                 conn.commit()
                 st.success("✅ Relatório guardado com sucesso!")
 
-    # --- ABA 4: ANÁLISE ESTATÍSTICA ---
-    with tabs_clin[4]:
-        st.subheader("🧪 Análise de Significância Estatística")
-        if df_hist.empty:
-            st.info("Dados insuficientes para análise.")
-        else:
-            # 1. Correlação
-            st.markdown("#### 1. Correlação: Volume vs. Esforço (PSE)")
-            vol = df_hist['reps_total'] * df_hist['series_total']
-            res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
-            
-            col1, col2 = st.columns(2)
-            col1.metric("Coeficiente r", f"{res_corr:.2f}")
-            col2.metric("P-Valor", f"{p_corr:.4f}")
-            
-            # 2. Regressão
-                fig_reg = px.scatter(df_hist, x=vol, y="pse", labels={'x':'Volume', 'pse':'PSE'})
-                                 labels={'x':'Volume Total', 'pse':'Esforço (PSE)'},
-                                 title="Linha de Tendência (Regressão Linear)")
-            st.plotly_chart(fig_reg, use_container_width=True)
-            
-            # 3. Teste T (Glicemia)
-            st.markdown("---")
-            st.markdown("#### 2. Teste t: Glicemia (Início vs Atual)")
-            g_inicio = df_hist[df_hist['semana'] <= 2]['glic_antes']
-            g_atual = df_hist[df_hist['semana'] > 2]['glic_antes']
-            
-            if len(g_inicio) > 1 and len(g_atual) > 1:
-                t_stat, p_val = stats.ttest_ind(g_inicio, g_atual)
-                if p_val < 0.05:
-                    st.success(f"Diferença significativa encontrada! (p={p_val:.4f})")
-                else:
-                    st.info(f"Sem diferença estatística relevante (p={p_val:.4f})")
+ # --- ABA 4: ANÁLISE ESTATÍSTICA ---
+with tabs_clin[4]:
+    st.subheader("🧪 Análise de Significância Estatística")
+    if df_hist.empty:
+        st.info("Dados insuficientes para análise.")
+    else:
+        st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
+        vol = df_hist['reps_total'] * df_hist['series_total']
+        
+        # O stats.pearsonr vem do scipy e não deve causar erro
+        res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
+        
+        col1, col2 = st.columns(2)
+        col1.metric("Coeficiente r", f"{res_corr:.2f}")
+        col2.metric("P-Valor", f"{p_corr:.4f}")
+        
+        # ESTA É A LINHA QUE TINHA O ERRO. 
+        # Removemos o trendline="ols" para não chamar o statsmodels
+        fig_reg = px.scatter(df_hist, x=vol, y="pse", labels={'x':'Volume', 'pse':'PSE'})
+        st.plotly_chart(fig_reg, use_container_width=True)
