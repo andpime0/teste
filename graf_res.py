@@ -44,7 +44,7 @@ def calc_karvonen(int_min, int_max):
     fcr = PACIENTE["fc_max"] - PACIENTE["fc_rep"]
     return int(fcr*int_min + PACIENTE["fc_rep"]), int(fcr*int_max + PACIENTE["fc_rep"])
 
-DB_PATH = "bestcare_v8.db"
+DB_PATH = "bestcare_v9.db"
 
 def get_conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -52,11 +52,13 @@ def get_conn():
 def init_db():
     conn = get_conn()
     c = conn.cursor()
+    # Adicionadas colunas fc_repouso e hba1c
     c.execute("""CREATE TABLE IF NOT EXISTS sessoes_v3 (
         id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT, semana INTEGER, fase TEXT, tipo TEXT,
-        fc_media INTEGER, fc_pico INTEGER, pa_sist_pre INTEGER, pa_diast_pre INTEGER,
-        pa_sist_pos INTEGER, pa_diast_pos INTEGER, pse INTEGER, reps_total INTEGER, series_total INTEGER, 
-        n_exercicios INTEGER, glic_antes INTEGER, glic_apos INTEGER, rir_medio INTEGER,
+        fc_repouso INTEGER, fc_media INTEGER, fc_pico INTEGER, 
+        pa_sist_pre INTEGER, pa_diast_pre INTEGER, pa_sist_pos INTEGER, pa_diast_pos INTEGER, 
+        pse INTEGER, reps_total INTEGER, series_total INTEGER, n_exercicios INTEGER, 
+        glic_antes INTEGER, glic_apos INTEGER, hba1c REAL, rir_medio INTEGER,
         relatorio_cliente TEXT, relatorio_clinico TEXT, validado INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS reports_cliente (
         id INTEGER PRIMARY KEY AUTOINCREMENT, data_envio TEXT, pa_sist_pre INTEGER, pa_diast_pre INTEGER, 
@@ -77,25 +79,35 @@ def seed_se_vazio(conn):
         n_ex = 6 if fase == "Inicial" else 7
         reps = int(80 + 70*f + rng.integers(-10, 10))
         volume = reps * series
+        
+        # Adaptação Cardiovascular
+        fc_repouso = int(76 - (8 * f) + rng.normal(0, 1)) # Desce de 76 para ~68
         fc_alvo = 102 + (118-102)*f
         fc_media = int(fc_alvo + rng.normal(0, 2))
         fc_pico = fc_media + int(rng.integers(10, 15))
-        pa_sist_pre = int(132 + rng.normal(0, 3))
-        pa_diast_pre = int(83 + rng.normal(0, 2))
+        
+        pa_sist_pre = int(135 - (5 * f) + rng.normal(0, 3))
+        pa_diast_pre = int(85 - (3 * f) + rng.normal(0, 2))
         pa_sist_pos = int(pa_sist_pre + 16 - (3*f) + rng.normal(0, 3))
         pa_diast_pos = int(pa_diast_pre + 3 + rng.normal(0, 2))
+        
         pse = int(13 + rng.integers(-1, 2)) 
         if volume > 1500: pse = int(14 + rng.integers(-1, 2))
+        
+        # Adaptação Metabólica
         glic_a = int(145 - 20*f + rng.normal(0, 4))
         glic_p = int(115 - 10*f + rng.normal(0, 4))
+        hba1c = round(6.9 - (0.7 * f) + rng.normal(0, 0.05), 1) # Desce de 6.9% para 6.2%
+        
         rir = int(2 + rng.integers(0, 2))
         data_s = (hoje - timedelta(days=(16-i)*2)).isoformat()
+        
         c.execute("""INSERT INTO sessoes_v3
-            (data, semana, fase, tipo, fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
-             pse, reps_total, series_total, n_exercicios, glic_antes, glic_apos, rir_medio, relatorio_clinico, validado)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
-            (data_s, (i//3)+1, fase, "Misto", fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
-             pse, reps, series, n_ex, glic_a, glic_p, rir, f"Sessão {i} ({fase}): Utente estável dentro do limiar prescrito."))
+            (data, semana, fase, tipo, fc_repouso, fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
+             pse, reps_total, series_total, n_exercicios, glic_antes, glic_apos, hba1c, rir_medio, relatorio_clinico, validado)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+            (data_s, (i//3)+1, fase, "Misto", fc_repouso, fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
+             pse, reps, series, n_ex, glic_a, glic_p, hba1c, rir, f"Sessão {i} ({fase}): Evolução positiva."))
     conn.commit()
 
 def carregar_sessoes(conn):
@@ -114,7 +126,7 @@ conn = init_db()
 seed_se_vazio(conn)
 df_hist = carregar_sessoes(conn)
 
-# ---------- NOVA LÓGICA: PRESCRIÇÕES COMO DATAFRAMES NATIVOS DO STREAMLIT ----------
+# ---------- PRESCRIÇÕES COMO DATAFRAMES NATIVOS DO STREAMLIT ----------
 def render_prescricao_geral(fase):
     st.markdown(f"#### Prescrição Geral — {fase}")
     if fase == "Inicial":
@@ -136,7 +148,6 @@ def render_prescricao_geral(fase):
             ["Flexibilidade", "2 dias/semana", "Máxima ROM", "10-15 reps", "Manutenção da ADM"]
         ]
     df = pd.DataFrame(data, columns=["Componente", "Frequência", "Intensidade", "Tempo", "Tipo"])
-    # Oculta o índice para ficar com visual de tabela clínica limpa
     st.dataframe(df, hide_index=True, use_container_width=True)
 
 def render_sessao_tipo(fase):
@@ -170,7 +181,6 @@ def render_sessao_tipo(fase):
     df = pd.DataFrame(data, columns=["Ordem", "Exercício", "Músculo", "Séries", "Reps", "Recuperação"])
     st.dataframe(df, hide_index=True, use_container_width=True)
 
-
 # ---------- SIDEBAR COM LOGÓTIPO LOCAL ----------
 def get_logo_html(filename="logo.png"):
     if os.path.exists(filename):
@@ -200,7 +210,6 @@ if user_role == "👤 Portal do Utente":
     st.title(f"Olá, Sr. {PACIENTE['nome'].split()[0]}! 👋")
     tabs = st.tabs(["🚀 Próximo Treino", "📅 Meu Calendário", "💪 Plano de Treino", "📈 A Minha Evolução", "📋 Meus Relatórios"])
 
-    # --- ABA 0: PRÓXIMO TREINO (Gráfico FC Maior) ---
     with tabs[0]:
         st.markdown(f'<div class="client-card"><h4>🎯 Próxima sessão disponível no calendário.</h4></div>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
@@ -208,14 +217,11 @@ if user_role == "👤 Portal do Utente":
             st.subheader("🏃 Cardio (Zonas Alvo)")
             low, high = calc_karvonen(0.60, 0.75)
             st.metric("FC Alvo Atual", f"{low} - {high} bpm", "Moderada-Intensa")
-            
-            # Gráfico de gauge muito maior (height de 250 para 400)
             fig = go.Figure(go.Indicator(mode="gauge+number", value=(low+high)//2,
                 gauge={'axis':{'range':[60,150]},'bar':{'color':"#2F5597"},
                        'steps':[{'range':[60,low],'color':"#e8f5e9"}, {'range':[low,high],'color':"#a5d6a7"}, {'range':[high,150],'color':"#ffcdd2"}]}))
             fig.update_layout(height=400, margin=dict(l=20, r=20, t=50, b=20))
             st.plotly_chart(fig, use_container_width=True)
-            
         with c2:
             st.subheader("🏋️ Dica de Força")
             st.info("💡 Lembre-se: Deve sentir que conseguia fazer +2/3 reps no fim de cada série (RiR 2-3).")
@@ -232,21 +238,16 @@ if user_role == "👤 Portal do Utente":
                 coment = st.text_area("Comentário (opcional)", "")
                 if st.form_submit_button("Submeter ao Treinador"):
                     inserir_report_cliente(conn, pa_s_pre, pa_d_pre, g_antes, pse_jose, reps_jose, coment)
-                    st.success("✅ Dados enviados e gravados na BD!")
+                    st.success("✅ Dados gravados com sucesso!")
 
-    # --- ABA 1: CALENDÁRIO (Com Datas e Vista Global) ---
     with tabs[1]:
         st.subheader("📅 Plano de Atividade do Programa")
         vista_calendario = st.radio("Selecione a Vista:", ["Por Fase (Detalhe Semanal)", "Vista Global (Programa Completo)"], horizontal=True)
-        
-        # Nomes dos meses para tradução no calendário
         meses_pt = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
         dias_pt = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 
         if vista_calendario == "Por Fase (Detalhe Semanal)":
             fase_atual = st.selectbox("Visualizar calendário para a fase:", ["Inicial", "Desenvolvimento", "Manutenção"])
-            
-            # Configuração das semanas consoante a fase
             if fase_atual == "Inicial":
                 config = {0:"Força + Aeróbio", 1:"Aeróbio", 2:"Aeróbio", 3:"Força + Aeróbio", 4:"Aeróbio"}
                 cls = "cal-inicial"; inicio_fase = DATA_INICIO_PROGRAMA
@@ -264,23 +265,17 @@ if user_role == "👤 Portal do Utente":
                 for i in range(7):
                     dia_atual = inicio_semana + timedelta(days=i)
                     str_dia = f"{dias_pt[dia_atual.weekday()]}, {dia_atual.day} {meses_pt[dia_atual.month-1]}"
-                    
                     with cols[i]:
                         if i in config:
                             st.markdown(f'<div class="cal-day {cls}"><b>{str_dia}</b><br>{config[i]}<br><small>30 min</small></div>', unsafe_allow_html=True)
                         else:
                             st.markdown(f'<div class="cal-day cal-rest"><b>{str_dia}</b><br>Descanso</div>', unsafe_allow_html=True)
-        
-        else: # VISTA GLOBAL (20 Semanas = ~5 Meses)
+        else:
             st.info("Visão macro do processo de reabilitação estruturado a longo prazo.")
             st.markdown("🟢 **Semanas 1-8:** Fase Inicial | 🟠 **Semanas 9-16:** Fase Desenvolvimento | 🔴 **Semanas 17+:** Manutenção")
-            
-            # Matriz compacta para os meses
             for mes in range(5):
                 inicio_mes = DATA_INICIO_PROGRAMA + timedelta(weeks=mes*4)
                 st.markdown(f"**Mês {mes+1}** ({meses_pt[inicio_mes.month-1]})")
-                
-                # Para uma vista global, mostramos pequenos cartões por semana em vez de por dia
                 cols = st.columns(4)
                 for sem_no_mes in range(4):
                     sem_total = (mes * 4) + sem_no_mes + 1
@@ -288,11 +283,9 @@ if user_role == "👤 Portal do Utente":
                         if sem_total <= 8: cls_global = "cal-inicial"; titulo = "Fase Inicial"
                         elif sem_total <= 16: cls_global = "cal-desenv"; titulo = "Desenvolvimento"
                         else: cls_global = "cal-manutencao"; titulo = "Manutenção"
-                        
                         st.markdown(f'<div class="cal-day {cls_global}"><b>Semana {sem_total}</b><br><small>{titulo}</small></div>', unsafe_allow_html=True)
-                st.write("") # Espaçamento
+                st.write("")
 
-    # --- ABA 2: PLANO DE TREINO (Agora com st.dataframe nativa e limpa!) ---
     with tabs[2]:
         st.subheader("💪 Orientação Técnica por Fase")
         fase_view = st.radio("Selecione a Fase para consultar:", ["Inicial", "Desenvolvimento", "Manutenção"], horizontal=True)
@@ -300,18 +293,50 @@ if user_role == "👤 Portal do Utente":
         st.divider()
         render_sessao_tipo(fase_view)
 
-    # --- ABA 3: EVOLUÇÃO ---
+    # --- ABA 3: EVOLUÇÃO (ATUALIZADA COM OS NOVOS PARÂMETROS METABÓLICOS) ---
     with tabs[3]:
-        st.subheader("📊 O meu progresso ao longo do tempo")
-        if not df_hist.empty:
+        st.subheader("📊 O meu progresso de Saúde Global")
+        if df_hist.empty:
+            st.info("Ainda não existem registos.")
+        else:
             df_plot = df_hist.copy()
             df_plot["data"] = pd.to_datetime(df_plot["data"])
-            fig_pa = go.Figure()
-            fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_sist_pos"], mode="lines+markers", name="PA Sistólica (pós)"))
-            fig_pa.update_layout(title="Pressão Arterial pós-treino", yaxis_title="mmHg")
-            st.plotly_chart(fig_pa, use_container_width=True)
+            
+            # Grelha 2x2 para melhor visualização
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                # 1. Gráfico de Pressão Arterial
+                fig_pa = go.Figure()
+                fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_sist_pre"], mode="lines+markers", name="Sistólica (Pré)", line=dict(color="#3498db", dash="dot")))
+                fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_sist_pos"], mode="lines+markers", name="Sistólica (Pós)", line=dict(color="#2980b9")))
+                fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_diast_pre"], mode="lines+markers", name="Diastólica (Pré)", line=dict(color="#e67e22", dash="dot")))
+                fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_diast_pos"], mode="lines+markers", name="Diastólica (Pós)", line=dict(color="#d35400")))
+                fig_pa.update_layout(title="Adaptação da Pressão Arterial", yaxis_title="mmHg", legend=dict(orientation="h", y=-0.2))
+                st.plotly_chart(fig_pa, use_container_width=True)
 
-    # --- ABA 4: HISTÓRICO ---
+                # 2. Gráfico de Glicémia
+                fig_glic = go.Figure()
+                fig_glic.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["glic_antes"], mode="lines+markers", name="Pré-Treino", line=dict(color="#9b59b6")))
+                fig_glic.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["glic_apos"], mode="lines+markers", name="Pós-Treino", line=dict(color="#8e44ad")))
+                fig_glic.update_layout(title="Controlo de Glicémia", yaxis_title="mg/dL", legend=dict(orientation="h", y=-0.2))
+                st.plotly_chart(fig_glic, use_container_width=True)
+
+            with col_b:
+                # 3. Gráfico de Frequência Cardíaca (Múltiplas Zonas)
+                fig_fc = go.Figure()
+                fig_fc.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["fc_repouso"], mode="lines+markers", name="FC Repouso", line=dict(color="#2ecc71")))
+                fig_fc.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["fc_media"], mode="lines+markers", name="FC Média (Treino)", line=dict(color="#f1c40f")))
+                fig_fc.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["fc_pico"], mode="lines+markers", name="FC Máx (Pico Treino)", line=dict(color="#e74c3c")))
+                fig_fc.update_layout(title="Frequência Cardíaca (Repouso e Esforço)", yaxis_title="bpm", legend=dict(orientation="h", y=-0.2))
+                st.plotly_chart(fig_fc, use_container_width=True)
+
+                # 4. Gráfico de Hemoglobina Glicada (HbA1c)
+                fig_hba1c = px.line(df_plot, x="data", y="hba1c", markers=True, title="Hemoglobina Glicada (HbA1c)")
+                fig_hba1c.update_traces(line_color="#1abc9c")
+                fig_hba1c.update_layout(yaxis_title="%", yaxis=dict(range=[5.0, 7.5]))
+                st.plotly_chart(fig_hba1c, use_container_width=True)
+
     with tabs[4]:
         st.subheader("📁 Histórico de Sessões")
         st.dataframe(df_hist[["data", "semana", "fase", "fc_media", "pa_sist_pos", "pse"]], hide_index=True, use_container_width=True)
@@ -321,7 +346,7 @@ if user_role == "👤 Portal do Utente":
 # ============================================================
 else:
     st.title("🩺 Painel de Monitorização Clínica")
-    tabs_clin = st.tabs(["📈 Evolução Biométrica e Muscular", "🔥 Análise de Carga", "📥 Registos do Cliente", "📝 Gestão de Relatórios", "🧪 Análise Estatística"])
+    tabs_clin = st.tabs(["📈 Evolução Biométrica", "🔥 Análise de Carga", "📥 Registos do Cliente", "📝 Gestão de Relatórios", "🧪 Estatística"])
 
     with tabs_clin[0]:
         if df_hist.empty: st.info("Sem dados.")
@@ -338,14 +363,14 @@ else:
             with c2:
                 st.subheader("Pressão Arterial (Pré vs Pós)")
                 fig_pa = go.Figure()
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pre"], name="Sistólica Pré", line=dict(dash="dot", color="blue")))
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"], name="Sistólica Pós", line=dict(color="blue")))
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pre"], name="Diastólica Pré", line=dict(dash="dot", color="orange")))
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pos"], name="Diastólica Pós", line=dict(color="orange")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pre"], name="Sist. Pré", line=dict(dash="dot", color="blue")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"], name="Sist. Pós", line=dict(color="blue")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pre"], name="Diast. Pré", line=dict(dash="dot", color="orange")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pos"], name="Diast. Pós", line=dict(color="orange")))
                 st.plotly_chart(fig_pa, use_container_width=True)
+            
             st.divider()
-            st.subheader("💪 Relação Gráfica: Esforço Percebido (PSE) por Grupo Muscular")
-            st.caption("Evolução neuromuscular simulada de acordo com as cargas prescritas.")
+            st.subheader("💪 Esforço Percebido (PSE) por Grupo Muscular")
             dados_musculos = []
             rng_musc = np.random.default_rng(42)
             for sem in df_c["semana"].unique():
@@ -379,7 +404,7 @@ else:
             dt = c_a.date_input("Data", value=date.today())
             sem = c_b.number_input("Semana", 1, 12, 1)
             fase = st.selectbox("Fase", ["Inicial", "Desenvolvimento", "Manutenção"])
-            txt = st.text_area("Notas Clínicas / Conclusão")
+            txt = st.text_area("Notas Clínicas")
             if st.form_submit_button("💾 Gravar"):
                 conn.cursor().execute("INSERT INTO sessoes_v3 (data, semana, fase, tipo, relatorio_clinico, validado) VALUES (?,?,?,?,?,1)", (dt.isoformat(), int(sem), fase, "Misto", txt))
                 conn.commit()
