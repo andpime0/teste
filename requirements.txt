@@ -3,6 +3,7 @@ pandas
 plotly
 numpy
 statsmodels
+seaborn
 
 streamlit==1.38.0
 pandas==2.2.2
