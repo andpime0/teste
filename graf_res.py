@@ -471,12 +471,11 @@ else:
                      hide_index=True, use_container_width=True)
 
 # ============================================================
-# 🩺 ÁREA CLÍNICA (EQUIPA)
+# ÁREA CLÍNICA (EQUIPA)
 # ============================================================
 else:
     st.title("🩺 Painel de Monitorização Clínica")
     
-    # Criamos as 5 abas de uma só vez
     tabs_clin = st.tabs([
         "🔥 Análise de Carga", 
         "📈 Evolução Biométrica", 
@@ -547,7 +546,7 @@ else:
     # --- ABA 3: GESTÃO DE RELATÓRIOS ---
     with tabs_clin[3]:
         st.subheader("✍️ Publicar Relatório de Sessão")
-        with st.form("relatorio_clinico"):
+        with st.form("relatorio_clinico_form"):
             c_a, c_b = st.columns(2)
             dt = c_a.date_input("Data", value=date.today())
             sem = c_b.number_input("Semana", 1, 12, 1)
@@ -563,36 +562,17 @@ else:
     # --- ABA 4: ANÁLISE ESTATÍSTICA ---
     with tabs_clin[4]:
         st.subheader("🧪 Análise de Significância Estatística")
-        st.markdown("---")
-        
-        # 1. Correlação de Pearson
-        st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
-        vol = df_hist['reps_total'] * df_hist['series_total']
-        res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
-        
-        col1, col2 = st.columns(2)
-        col1.metric("Coeficiente r", f"{res_corr:.2f}")
-        col2.metric("P-Valor", f"{p_corr:.4f}")
-        
-        fig_st = sns.lmplot(x='reps_total', y='pse', data=df_hist, height=5, aspect=1.5)
-        st.pyplot(fig_st.fig)
-        
-        # 2. Teste t de Student
-        st.markdown("---")
-        st.markdown("#### 2. Teste t: Glicemia (Fase Inicial vs. Atual)")
-        f_i = df_hist[df_hist['semana'] <= 4]['glic_antes']
-        f_a = df_hist[df_hist['semana'] > 4]['glic_antes']
-        
-        if not f_i.empty and not f_a.empty:
-            t_stat, p_val = stats.ttest_ind(f_i, f_a)
-            st.write(f"Média Inicial: **{f_i.mean():.1f}** | Média Atual: **{f_a.mean():.1f}**")
-            if p_val < 0.05:
-                st.success(f"Diferença Estatisticamente Significativa! (p={p_val:.4f})")
-            else:
-                st.warning(f"Sem diferença significativa até ao momento (p={p_val:.4f})")
-
-        # 3. Regressão OLS
-        st.markdown("---")
-        st.markdown("#### 3. Tendência de Eficiência")
-        fig_reg = px.scatter(df_hist, x="reps_total", y="pse", trendline="ols", trendline_color_override="red")
-        st.plotly_chart(fig_reg, use_container_width=True)
+        if df_hist.empty:
+            st.info("Dados insuficientes para análise.")
+        else:
+            st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
+            vol = df_hist['reps_total'] * df_hist['series_total']
+            res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
+            
+            col1, col2 = st.columns(2)
+            col1.metric("Coeficiente r", f"{res_corr:.2f}")
+            col2.metric("P-Valor", f"{p_corr:.4f}")
+            
+            # Gráfico de regressão simples
+            fig_reg = px.scatter(df_hist, x=vol, y="pse", trendline="ols", labels={'x':'Volume', 'pse':'PSE'})
+            st.plotly_chart(fig_reg, use_container_width=True)
