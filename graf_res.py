@@ -83,7 +83,8 @@ def seed_data():
             reps = int(80 + 70*f + rng.integers(-10, 10))
             data_s = (hoje - timedelta(days=(16-i)*2)).isoformat()
             
-            c.execute("INSERT INTO sessoes_v4 (data, semana, fase, tipo, fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos, pse, reps_total, series_total, n_exercicios, glic_antes, glic_apos, rir_medio, relatorio_clinico, validado) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
+            c.execute("INSERT INTO sessoes_v4 (data, semana, fase, tipo, fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos, pse, reps_total, series_total, n_exercicios, glic_antes, glic_apos, rir_medio, relatorio_clinico, validado) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (data_s, (i//3)+1, fase, "Misto", fc_media, fc_media+12, 134, 84, 145, 88, pse, reps, 12, 7, 140, 110, 3, "Sessão estável.", 1))
                       (data_s, (i//3)+1, fase, "Misto", fc_media, fc_media+12, 134, 84, 145, 88, pse, reps, 12, 7, 140, 110, 3, "Sessão estável.", 1))
         conn.commit()
 
