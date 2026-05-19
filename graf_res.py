@@ -7,8 +7,6 @@ from datetime import datetime, timedelta, date
 import sqlite3
 import calendar
 import scipy.stats as stats
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="BestCare Pro | Sistema Integrado", page_icon="🧪", layout="wide")
 
