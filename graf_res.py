@@ -8,27 +8,42 @@ import sqlite3
 import calendar
 import scipy.stats as stats
 
-st.set_page_config(page_title="BestCare Pro | Sistema Integrado", page_icon="🧪", layout="wide")
+st.set_page_config(page_title="BestCare Pro | Sistema Integrado", page_icon="🫀", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #eee; }
-    .stButton>button { width: 100%; border-radius: 8px; height: 3em;
-                       background-color: #2F5597; color: white; }
-    .client-card { background-color: #e3f2fd; padding: 20px; border-radius: 10px;
-                   border-left: 5px solid #2196f3; }
-    .clinical-card { background-color: #f1f8e9; padding: 20px; border-radius: 10px;
-                     border-left: 5px solid #4caf50; }
-    .cal-day { background:#fff; border-radius:8px; padding:8px; min-height:90px;
-               border:1px solid #e0e0e0; margin:2px; font-size:0.85em; }
-    .cal-inicial { background:#e8f5e9; border-left:4px solid #43a047; }
-    .cal-desenv  { background:#fff3e0; border-left:4px solid #fb8c00; }
-    .cal-rest    { background:#fafafa; color:#999; }
+    /* Fundo da aplicação num tom cinza/azul muito suave (clínico) */
+    .main { background-color: #f4f6f9; }
+    
+    /* Tipografia mais limpa para cabeçalhos */
+    h1, h2, h3 { color: #2c3e50; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    
+    /* Cartões de Métricas (KPIs) com estilo rigoroso */
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 4px solid #2980b9; }
+                
+    /* Botões sóbrios e profissionais */
+    .stButton>button { width: 100%; border-radius: 6px; height: 3em; border: none; font-weight: 600;
+                       background-color: #2c3e50; color: white; transition: all 0.3s ease; }
+    .stButton>button:hover { background-color: #34495e; color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    
+    /* Cartões informativos de fase/estado */
+    .client-card { background-color: #ffffff; padding: 20px; border-radius: 8px; 
+                   box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-top: 4px solid #2980b9; }
+    .clinical-card { background-color: #ffffff; padding: 20px; border-radius: 8px; 
+                     box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-top: 4px solid #27ae60; }
+                     
+    /* Calendário modernizado e limpo */
+    .cal-day { background:#fff; border-radius:6px; padding:10px; min-height:90px; 
+               border:1px solid #e1e8ed; margin:2px; font-size:0.85em; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+    .cal-inicial { border-left: 4px solid #2ecc71; background-color: #f9fdfa; }
+    .cal-desenv  { border-left: 4px solid #f39c12; background-color: #fffcf8; }
+    .cal-rest    { background:#f5f7f9; color:#95a5a6; border-color: #ecf0f1; }
+    
+    /* Linhas divisórias mais suaves */
+    hr { margin-top: 1.5em; margin-bottom: 1.5em; border: 0; border-top: 1px solid #ecf0f1; }
     </style>
     """, unsafe_allow_html=True)
-
 # ---------- PACIENTE ----------
 PACIENTE = {"nome": "José Oliveira", "idade": 55, "fc_max": 145, "fc_rep": 72, "vo2_prev": 35.4}
 DATA_INICIO_PROGRAMA = date.today() - timedelta(weeks=5)
@@ -150,11 +165,20 @@ def gerar_calendario():
 PLANO = gerar_calendario()
 
 # ---------- SIDEBAR ----------
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/822/822118.png", width=80)
-st.sidebar.title("BestCare Pro")
-st.sidebar.markdown("Sistema Integrado de Reabilitação")
-user_role = st.sidebar.radio("Selecione o Portal:", ["👤 Área do Utente (José)", "🩺 Área Clínica (Equipa)"])
-st.sidebar.info(f"Paciente: **{PACIENTE['nome']}**\n\nAlvo VO₂: {PACIENTE['vo2_prev']} ml/kg/min")
+# Se um dia tiveres o logo da tua clínica, podes usar: st.sidebar.image("logo_clinica.png", use_container_width=True)
+
+st.sidebar.markdown("""
+    <div style='text-align: center; padding-bottom: 20px;'>
+        <h2 style='color: #2c3e50; margin-bottom: 0;'>🏥 BestCare Pro</h2>
+        <p style='color: #7f8c8d; font-size: 0.85em; font-weight: 500;'>PLATAFORMA CLÍNICA INTEGRADA</p>
+    </div>
+""", unsafe_allow_html=True)
+
+user_role = st.sidebar.radio("Navegação do Sistema:", ["👤 Portal do Utente", "🩺 Monitorização Clínica"])
+
+st.sidebar.divider()
+st.sidebar.markdown("### Processo Clínico")
+st.sidebar.info(f"**Utente:** {PACIENTE['nome']}\n\n**Idade:** {PACIENTE['idade']} anos\n\n**Alvo VO₂:** {PACIENTE['vo2_prev']} ml/kg/min")
 
 # ============================================================
 # ÁREA DO CLIENTE
