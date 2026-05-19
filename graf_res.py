@@ -6,6 +6,9 @@ import numpy as np
 from datetime import datetime, timedelta, date
 import sqlite3
 import calendar
+import scipy.stats as stats
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="BestCare Pro | Sistema Integrado", page_icon="🧪", layout="wide")
 
@@ -466,3 +469,48 @@ else:
         st.dataframe(df_hist[["data", "semana", "fase", "pse", "fc_media",
                               "pa_sist_pos", "relatorio_clinico"]].tail(8),
                      hide_index=True, use_container_width=True)
+
+# ============================================================
+# 🩺 ÁREA CLÍNICA (EQUIPA) - ABA ESTATÍSTICA
+# ============================================================
+else:
+    st.title("🩺 Painel de Monitorização Clínica")
+    tabs_clin = st.tabs(["🔥 Análise de Carga", "📈 Evolução Biométrica", "🧪 Análise Estatística"])
+
+    # Aba de Análise Estatística
+    with tabs_clin[2]:
+        st.subheader("📊 Relatório Estatístico Avançado")
+        
+        # 1. Correlação Carga vs PSE
+        st.write("---")
+        st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
+        # Calculando correlação de Pearson
+        corr, p_val_corr = stats.pearsonr(df_hist['reps_total'] * df_hist['series_total'], df_hist['pse'])
+        nivel = "Alta" if abs(corr) >= 0.7 else "Moderada" if abs(corr) >= 0.4 else "Leve"
+        
+        col_e1, col_e2 = st.columns(2)
+        col_e1.metric("Coeficiente (r)", f"{corr:.2f}")
+        col_e2.metric("Nível de Correlação", nivel)
+        
+        fig_reg = sns.lmplot(x='reps_total', y='pse', data=df_hist, aspect=1.5)
+        st.pyplot(fig_reg.fig)
+        st.caption(f"Correlação entre o Volume total (reps) e o PSE. p-valor: {p_val_corr:.4f}")
+
+        # 2. Teste t para Glicemia
+        st.write("---")
+        st.markdown("#### 2. Teste t: Comparação Glicemia (Inicial vs Melhoria)")
+        fase_inicial = df_hist[df_hist['semana'] <= 4]['glic_antes']
+        fase_melhoria = df_hist[df_hist['semana'] > 4]['glic_antes']
+        t_stat, p_val_t = stats.ttest_ind(fase_inicial, fase_melhoria)
+        
+        st.write(f"Média Inicial: **{fase_inicial.mean():.1f}** | Média Melhoria: **{fase_melhoria.mean():.1f}**")
+        if p_val_t < 0.05:
+            st.success(f"Resultado Significativo! (p={p_val_t:.4f}) - A intervenção teve impacto na glicemia.")
+        else:
+            st.warning(f"Resultado Não Significativo (p={p_val_t:.4f}) - Necessário mais tempo de monitorização.")
+
+        # 3. Regressão Linear (Evolução Carga vs PSE)
+        st.write("---")
+        st.markdown("#### 3. Regressão: Eficiência de Carga")
+        fig_evol = px.scatter(df_hist, x="reps_total", y="pse", trendline="ols", title="Tendência da PSE com o Aumento da Carga")
+        st.plotly_chart(fig_evol, use_container_width=True)
