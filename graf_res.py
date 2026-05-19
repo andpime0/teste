@@ -476,6 +476,7 @@ else:
 else:
     st.title("🩺 Painel de Monitorização Clínica")
     
+    # Criamos as 5 abas de uma só vez
     tabs_clin = st.tabs([
         "🔥 Análise de Carga", 
         "📈 Evolução Biométrica", 
@@ -484,6 +485,7 @@ else:
         "🧪 Análise Estatística"
     ])
 
+    # --- ABA 0: ANÁLISE DE CARGA ---
     with tabs_clin[0]:
         st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
         if df_hist.empty:
@@ -507,6 +509,7 @@ else:
             fig_heat.update_layout(xaxis_title="Volume (Reps x Séries)", yaxis_title="PSE (6-20)")
             st.plotly_chart(fig_heat, use_container_width=True)
 
+    # --- ABA 1: EVOLUÇÃO BIOMÉTRICA ---
     with tabs_clin[1]:
         if df_hist.empty:
             st.info("Sem dados.")
@@ -527,12 +530,21 @@ else:
                 fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"], name="Sistólica Pós"))
                 fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pos"], name="Diastólica Pós"))
                 st.plotly_chart(fig_pa, use_container_width=True)
+            
+            st.subheader("Glicemia (pré vs pós)")
+            fig_g = px.bar(df_c, x="data", y=["glic_antes", "glic_apos"], barmode="group")
+            st.plotly_chart(fig_g, use_container_width=True)
 
+    # --- ABA 2: REGISTOS DO CLIENTE ---
     with tabs_clin[2]:
-        st.subheader("📥 Submissões Recentes")
+        st.subheader("📥 Submissões Recentes (App Cliente)")
         df_envios = carregar_reports_cliente(conn)
-        st.dataframe(df_envios, hide_index=True, use_container_width=True)
+        if df_envios.empty:
+            st.info("Sem submissões pendentes.")
+        else:
+            st.dataframe(df_envios, hide_index=True, use_container_width=True)
 
+    # --- ABA 3: GESTÃO DE RELATÓRIOS ---
     with tabs_clin[3]:
         st.subheader("✍️ Publicar Relatório de Sessão")
         with st.form("relatorio_clinico"):
@@ -540,20 +552,21 @@ else:
             dt = c_a.date_input("Data", value=date.today())
             sem = c_b.number_input("Semana", 1, 12, 1)
             fase = st.selectbox("Fase", ["Inicial", "Desenvolvimento", "Melhoria"])
-            txt = st.text_area("Notas Clínicas")
+            txt = st.text_area("Notas Clínicas / Conclusão")
             if st.form_submit_button("💾 Gravar na Base de Dados"):
                 cur = conn.cursor()
                 cur.execute("INSERT INTO sessoes_v3 (data, semana, fase, tipo, relatorio_clinico, validado) VALUES (?,?,?,?,?,1)",
                             (dt.isoformat(), int(sem), fase, "Misto", txt))
                 conn.commit()
-                st.success("Relatório guardado!")
+                st.success("✅ Relatório guardado com sucesso!")
 
+    # --- ABA 4: ANÁLISE ESTATÍSTICA ---
     with tabs_clin[4]:
         st.subheader("🧪 Análise de Significância Estatística")
         st.markdown("---")
         
-        # 1. Correlação Carga/PSE
-        st.markdown("#### 1. Correlação: Carga vs. PSE")
+        # 1. Correlação de Pearson
+        st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
         vol = df_hist['reps_total'] * df_hist['series_total']
         res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
         
@@ -564,19 +577,22 @@ else:
         fig_st = sns.lmplot(x='reps_total', y='pse', data=df_hist, height=5, aspect=1.5)
         st.pyplot(fig_st.fig)
         
-        # 2. Teste t (Glicemia)
+        # 2. Teste t de Student
         st.markdown("---")
-        st.markdown("#### 2. Teste t: Glicemia (Antes vs Depois)")
-        if not df_hist.empty:
-            t_stat, p_val = stats.ttest_ind(df_hist['glic_antes'], df_hist['glic_apos'])
-            st.write(f"Média Pré: **{df_hist['glic_antes'].mean():.1f}** | Média Pós: **{df_hist['glic_apos'].mean():.1f}**")
+        st.markdown("#### 2. Teste t: Glicemia (Fase Inicial vs. Atual)")
+        f_i = df_hist[df_hist['semana'] <= 4]['glic_antes']
+        f_a = df_hist[df_hist['semana'] > 4]['glic_antes']
+        
+        if not f_i.empty and not f_a.empty:
+            t_stat, p_val = stats.ttest_ind(f_i, f_a)
+            st.write(f"Média Inicial: **{f_i.mean():.1f}** | Média Atual: **{f_a.mean():.1f}**")
             if p_val < 0.05:
-                st.success(f"Diferença Significativa encontrada! (p={p_val:.4f})")
+                st.success(f"Diferença Estatisticamente Significativa! (p={p_val:.4f})")
             else:
-                st.warning(f"Sem diferença estatística significativa (p={p_val:.4f})")
+                st.warning(f"Sem diferença significativa até ao momento (p={p_val:.4f})")
 
-        # 3. Regressão com Plotly
+        # 3. Regressão OLS
         st.markdown("---")
-        st.markdown("#### 3. Linha de Tendência (Eficiência)")
+        st.markdown("#### 3. Tendência de Eficiência")
         fig_reg = px.scatter(df_hist, x="reps_total", y="pse", trendline="ols", trendline_color_override="red")
         st.plotly_chart(fig_reg, use_container_width=True)
