@@ -197,7 +197,7 @@ st.sidebar.markdown(f"""
     <div style='text-align: center; padding-bottom: 20px;'>
         {get_logo_html()}
         <h2 style='color: #2c3e50; margin-bottom: 0;'>BestCare Pro</h2>
-        <p style='color: #7f8c8d; font-size: 0.85em; font-weight: 500;'>PLATAFORMA CLÍNICA INTEGRADA</p>
+        <p style='color: #7f8c8d; font-size: 0.85em; font-weight: 550;'>PLATAFORMA CLÍNICA INTEGRADA</p>
     </div>
 """, unsafe_allow_html=True)
 
