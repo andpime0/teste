@@ -1,1 +1,7 @@
 python-3.11
+
+bash
+
+git add runtime.txt requirements.txt
+git commit -m "fix: pin python 3.11 and add seaborn"
+git push
