@@ -306,7 +306,7 @@ if user_role == "👤 Portal do Utente":
     # --- ABA 2: PLANO DE TREINO ---
     with tabs[2]:
         st.subheader("💪 Orientação Técnica por Fase")
-        fase_view = st.segment_control("Selecione a Fase para consultar:", ["Inicial", "Desenvolvimento", "Manutenção"], default="Inicial")
+        fase_view = st.radio("Selecione a Fase para consultar:", ["Inicial", "Desenvolvimento", "Manutenção"], horizontal=True)
         render_prescricao_geral(fase_view)
         st.divider()
         render_sessao_tipo(fase_view)
