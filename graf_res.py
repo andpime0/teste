@@ -190,7 +190,7 @@ def get_logo_html(filename="logo.png"):
     if os.path.exists(filename):
         with open(filename, 'rb') as f:
             data = base64.b64encode(f.read()).decode()
-        return f"<img src='data:image/png;base64,{data}' width='300' style='margin-bottom: 5px;'>"
+        return f"<img src='data:image/png;base64,{data}' width='300' style='margin-bottom: 0px;'>"
     return "<div style='font-size: 50px;'>🫀</div>"
 
 st.sidebar.markdown(f"""
