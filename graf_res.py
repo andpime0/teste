@@ -220,7 +220,7 @@ if user_role == "👤 Portal do Utente":
         with c1:
             st.subheader("🏃 Cardio (Zonas Alvo)")
             low, high = calc_karvonen(0.60, 0.75)
-            st.metric("FC Alvo Atual", f"{low} - {high} bpm", "Moderada-Intensa")
+            st.metric("FC Alvo Atual", f"{low} - {high} bpm", "Moderada")
             fig = go.Figure(go.Indicator(mode="gauge+number", value=(low+high)//2,
                 gauge={'axis':{'range':[60,150]},'bar':{'color':"#2F5597"},
                        'steps':[{'range':[60,low],'color':"#e8f5e9"}, {'range':[low,high],'color':"#a5d6a7"}, {'range':[high,150],'color':"#ffcdd2"}]}))
