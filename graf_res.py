@@ -31,14 +31,14 @@ st.markdown("""
 
 # ---------- PACIENTE ----------
 PACIENTE = {"nome": "José Oliveira", "idade": 55, "fc_max": 145, "fc_rep": 72, "vo2_prev": 35.4}
-DATA_INICIO_PROGRAMA = date(2026, 4, 13)
+DATA_INICIO_PROGRAMA = date.today() - timedelta(weeks=5)
 
 def calc_karvonen(int_min, int_max):
     fcr = PACIENTE["fc_max"] - PACIENTE["fc_rep"]
     return int(fcr*int_min + PACIENTE["fc_rep"]), int(fcr*int_max + PACIENTE["fc_rep"])
 
-# ---------- BASE DE DADOS ----------
-DB_PATH = "bestcare_v5.db"
+# ---------- BASE DE DADOS (Atualizada para v7) ----------
+DB_PATH = "bestcare_v7.db"
 
 def get_conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -58,8 +58,9 @@ def init_db():
         validado INTEGER DEFAULT 0)""")
     c.execute("""CREATE TABLE IF NOT EXISTS reports_cliente (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        data_envio TEXT, glic_antes INTEGER, pse INTEGER,
-        reps_total INTEGER, comentario TEXT, lido INTEGER DEFAULT 0)""")
+        data_envio TEXT, pa_sist_pre INTEGER, pa_diast_pre INTEGER, 
+        glic_antes INTEGER, pse INTEGER, reps_total INTEGER, 
+        comentario TEXT, lido INTEGER DEFAULT 0)""")
     conn.commit()
     return conn
 
@@ -76,24 +77,33 @@ def seed_se_vazio(conn):
         f = i/15
         fase = "Inicial" if i <= 6 else "Desenvolvimento"
         
-        fc_alvo = 101 + (127-101)*f
-        fc_media = int(fc_alvo + rng.normal(0, 3))
-        fc_pico = fc_media + int(rng.integers(8, 15))
-        
-        pa_sist_pre = int(134 + rng.normal(0, 4))
-        pa_diast_pre = int(84 + rng.normal(0, 3))
-        delta_sist = int(18 - 6*f + rng.normal(0, 3))
-        delta_diast = int(2 + rng.normal(0, 2))
-        pa_sist_pos = pa_sist_pre + delta_sist
-        pa_diast_pos = pa_diast_pre + delta_diast
-        
-        pse = int(round(15 - 3*f + rng.normal(0, 0.4)))
-        reps = int(80 + 70*f + rng.integers(-10, 10))
+        # Carga Externa Progressiva (Volume Realista)
         series = 9 if fase == "Inicial" else 12
         n_ex = 6 if fase == "Inicial" else 7
-        glic_a = int(150 - 25*f + rng.normal(0, 8))
-        glic_p = int(115 - 15*f + rng.normal(0, 6))
-        rir = int(round(4 - 2*f))
+        reps = int(80 + 70*f + rng.integers(-10, 10))
+        volume = reps * series
+        
+        # Resposta Cardiovascular Crónica Dinâmica
+        fc_alvo = 102 + (118-102)*f
+        fc_media = int(fc_alvo + rng.normal(0, 2))
+        fc_pico = fc_media + int(rng.integers(10, 15))
+        
+        pa_sist_pre = int(132 + rng.normal(0, 3))
+        pa_diast_pre = int(83 + rng.normal(0, 2))
+        
+        # Adaptação minimiza o pico pós-treino apesar do aumento substancial de volume
+        pa_sist_pos = int(pa_sist_pre + 16 - (3*f) + rng.normal(0, 3))
+        pa_diast_pos = int(pa_diast_pre + 3 + rng.normal(0, 2))
+        
+        # NOVA LÓGICA FISIOLÓGICA DA PSE: Estabilizada na zona terapêutica alvo (13-14)
+        # O esforço percebido flutua ligeiramente devido à titulação correta da carga
+        pse = int(13 + rng.integers(-1, 2)) 
+        if volume > 1500: 
+            pse = int(14 + rng.integers(-1, 2))
+        
+        glic_a = int(145 - 20*f + rng.normal(0, 4))
+        glic_p = int(115 - 10*f + rng.normal(0, 4))
+        rir = int(2 + rng.integers(0, 2)) # RiR mantido estavelmente entre 2 e 3
         
         data_s = (hoje - timedelta(days=(16-i)*2)).isoformat()
 
@@ -106,7 +116,7 @@ def seed_se_vazio(conn):
             (data_s, (i//3)+1, fase, "Misto", fc_media, fc_pico,
              pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
              pse, reps, series, n_ex, glic_a, glic_p, rir,
-             f"Sessão {i} ({fase}): resposta hemodinâmica estável."))
+             f"Sessão {i} ({fase}): Sobrecarga progressiva devidamente titulada. Utente estável dentro do limiar prescrito."))
     conn.commit()
 
 def carregar_sessoes(conn):
@@ -115,11 +125,11 @@ def carregar_sessoes(conn):
 def carregar_reports_cliente(conn):
     return pd.read_sql_query("SELECT * FROM reports_cliente ORDER BY data_envio DESC", conn)
 
-def inserir_report_cliente(conn, glic, pse, reps, comentario):
+def inserir_report_cliente(conn, pa_s, pa_d, glic, pse, reps, comentario):
     c = conn.cursor()
-    c.execute("""INSERT INTO reports_cliente (data_envio, glic_antes, pse, reps_total, comentario)
-                 VALUES (?,?,?,?,?)""",
-              (datetime.now().isoformat(timespec="minutes"), glic, pse, reps, comentario))
+    c.execute("""INSERT INTO reports_cliente (data_envio, pa_sist_pre, pa_diast_pre, glic_antes, pse, reps_total, comentario)
+                 VALUES (?,?,?,?,?,?,?)""",
+              (datetime.now().isoformat(timespec="minutes"), pa_s, pa_d, glic, pse, reps, comentario))
     conn.commit()
 
 # ---------- INIT ----------
@@ -127,7 +137,7 @@ conn = init_db()
 seed_se_vazio(conn)
 df_hist = carregar_sessoes(conn)
 
-# ---------- CALENDÁRIO DO PROGRAMA ----------
+# ---------- CALENDÁRIO ----------
 def gerar_calendario():
     plano = {}
     for semana in range(5):
@@ -144,7 +154,6 @@ st.sidebar.image("https://cdn-icons-png.flaticon.com/512/822/822118.png", width=
 st.sidebar.title("BestCare Pro")
 st.sidebar.markdown("Sistema Integrado de Reabilitação")
 user_role = st.sidebar.radio("Selecione o Portal:", ["👤 Área do Utente (José)", "🩺 Área Clínica (Equipa)"])
-
 st.sidebar.info(f"Paciente: **{PACIENTE['nome']}**\n\nAlvo VO₂: {PACIENTE['vo2_prev']} ml/kg/min")
 
 # ============================================================
@@ -152,19 +161,15 @@ st.sidebar.info(f"Paciente: **{PACIENTE['nome']}**\n\nAlvo VO₂: {PACIENTE['vo2
 # ============================================================
 if user_role == "👤 Área do Utente (José)":
     st.title(f"Olá, Sr. {PACIENTE['nome'].split()[0]}! 👋")
-    tabs = st.tabs(["🚀 Próximo Treino", "📅 Meu Calendário", "💪 Plano de Treino",
-                    "📈 A Minha Evolução", "📋 Meus Relatórios"])
+    tabs = st.tabs(["🚀 Próximo Treino", "📅 Meu Calendário", "💪 Plano de Treino", "📈 A Minha Evolução", "📋 Meus Relatórios"])
 
-    # --- Próximo treino ---
     with tabs[0]:
         hoje = date.today()
         proximos = sorted([d for d in PLANO if d >= hoje])
         prox = proximos[0] if proximos else None
         if prox:
             info = PLANO[prox]
-            st.markdown(f'<div class="client-card"><h4>🎯 Próxima sessão: '
-                        f'{prox.strftime("%A, %d %b")} — Fase {info["fase"]} ({info["tipo"]})</h4></div>',
-                        unsafe_allow_html=True)
+            st.markdown(f'<div class="client-card"><h4>🎯 Próxima sessão: {prox.strftime("%A, %d %b")} — Fase {info["fase"]} ({info["tipo"]})</h4></div>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("🏃 Cardio (Zonas Alvo)")
@@ -175,9 +180,7 @@ if user_role == "👤 Área do Utente (José)":
             st.metric("FC Alvo", f"{low} - {high} bpm", zona)
             fig = go.Figure(go.Indicator(mode="gauge+number", value=(low+high)//2,
                 gauge={'axis':{'range':[60,150]},'bar':{'color':"#2F5597"},
-                       'steps':[{'range':[60,low],'color':"#e8f5e9"},
-                                {'range':[low,high],'color':"#a5d6a7"},
-                                {'range':[high,150],'color':"#ffcdd2"}]}))
+                       'steps':[{'range':[60,low],'color':"#e8f5e9"}, {'range':[low,high],'color':"#a5d6a7"}, {'range':[high,150],'color':"#ffcdd2"}]}))
             fig.update_layout(height=250)
             st.plotly_chart(fig, use_container_width=True)
         with c2:
@@ -188,20 +191,21 @@ if user_role == "👤 Área do Utente (José)":
 
         st.divider()
         with st.form("registo_jose"):
-            st.subheader("📝 Registar Dados da Sessão")
+            st.subheader("📝 Registar Dados da Sessão (Pós-Treino)")
+            c_pa, c_pb = st.columns(2)
+            pa_s_pre = c_pa.number_input("PA Sistólica (Pré-treino)", 90, 200, 120)
+            pa_d_pre = c_pb.number_input("PA Diastólica (Pré-treino)", 50, 130, 80)
             ca, cb = st.columns(2)
             g_antes = ca.number_input("Glicose Pré-Treino (mg/dL)", 40, 300, 130)
             pse_jose = cb.slider("Como se sentiu? (PSE 6-20)", 6, 20, 13)
             reps_jose = st.number_input("Total de Repetições", 0, 500, 150)
             coment = st.text_area("Comentário (opcional)", "")
             if st.form_submit_button("Submeter ao Treinador"):
-                inserir_report_cliente(conn, g_antes, pse_jose, reps_jose, coment)
-                st.success("✅ Dados enviados e gravados na BD! O treinador irá validar.")
+                inserir_report_cliente(conn, pa_s_pre, pa_d_pre, g_antes, pse_jose, reps_jose, coment)
+                st.success("✅ Dados enviados e gravados na BD!")
 
-    # --- Calendário ---
     with tabs[1]:
         st.subheader("📅 Plano das próximas 5 semanas")
-        st.caption("🟢 Fase Inicial · 🟠 Fase Desenvolvimento · ⚪ Descanso")
         for semana in range(5):
             inicio_sem = DATA_INICIO_PROGRAMA + timedelta(weeks=semana)
             st.markdown(f"**Semana {semana+1}** — início {inicio_sem.strftime('%d/%m')}")
@@ -212,142 +216,37 @@ if user_role == "👤 Área do Utente (José)":
                     if d in PLANO:
                         info = PLANO[d]
                         cls = "cal-inicial" if info["fase"]=="Inicial" else "cal-desenv"
-                        st.markdown(f'<div class="cal-day {cls}"><b>{nome} {d.day}</b><br>'
-                                    f'{info["tipo"]}<br><small>{info["fase"]}</small></div>',
-                                    unsafe_allow_html=True)
+                        st.markdown(f'<div class="cal-day {cls}"><b>{nome} {d.day}</b><br>{info["tipo"]}<br><small>{info["fase"]}</small></div>', unsafe_allow_html=True)
                     else:
-                        st.markdown(f'<div class="cal-day cal-rest"><b>{nome} {d.day}</b><br>'
-                                    f'<small>Descanso</small></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="cal-day cal-rest"><b>{nome} {d.day}</b><br><small>Descanso</small></div>', unsafe_allow_html=True)
 
-    # --- Plano de treino ---
     with tabs[2]:
-        fase_sel = st.radio("Fase do plano:", ["Inicial", "Desenvolvimento"], horizontal=True)
-        st.subheader(f"Sessão tipo — Fase {fase_sel}")
+        st.subheader("💪 Sessões Tipo")
+        st.write("Configurações padrão mapeadas por fase no portal clínico.")
 
-        if fase_sel == "Inicial":
-            aer = pd.DataFrame([
-                ["Aquecimento Geral", "Bicicleta estática", "5-10 min", "PSE 6-10 (muito leve)", "-"],
-                ["Aeróbio",           "Caminhada (lenta)",  "30 min",   "PSE 11-12 (leve)",      "-"],
-                ["Alongamentos",      "Tai-chi",            "10 min",   "PSE 6 (muito leve)",    "-"],
-            ], columns=["Fase", "Tipo", "Tempo", "Intensidade", "Recuperação"])
-
-            forca = pd.DataFrame([
-                ["Aq. específico", "Agachamento (Smith)",   "Quadrícepe", "1-2", "3-4 (80% carga)", "60-90\""],
-                ["1", "Agachamento (Smith)",                "Quadrícepe", "1-2", "10-15",           "60-90\""],
-                ["2", "Lat Pulldown",                       "Dorsal",     "1-2", "10-15",           "60-90\""],
-                ["3", "Bench Press (Smith)",                "Peitoral",   "1-2", "10-15",           "60-90\""],
-                ["4", "DB Bicep Curl",                      "Bícepe",     "1-2", "10-15",           "60-90\""],
-                ["5", "Tricep Extension (polia)",           "Trícepe",    "1-2", "10-15",           "60-90\""],
-                ["6", "Abdominal Crunch",                   "Core",       "1-2", "10-15",           "60-90\""],
-            ], columns=["Ordem", "Exercício", "Grupo Muscular", "Séries", "Repetições", "Recuperação"])
-        else:
-            aer = pd.DataFrame([
-                ["Aquecimento Geral", "Bicicleta estática", "5-10 min", "PSE 6-10 (muito leve)",  "-"],
-                ["Aeróbio",           "Caminhada (normal)", "30 min",   "PSE 14-17 (moderado)",   "-"],
-                ["Alongamentos",      "Tai-chi",            "10 min",   "PSE 6 (muito leve)",     "-"],
-            ], columns=["Fase", "Tipo", "Tempo", "Intensidade", "Recuperação"])
-
-            forca = pd.DataFrame([
-                ["Aq. específico", "Agachamento (Smith)",   "Quadrícepe", "1-3", "3-4 (80% carga)", "90\"-3'"],
-                ["1", "Agachamento (Smith)",                "Quadrícepe", "1-3", "10-12",           "90\"-3'"],
-                ["2", "Deadlift",                           "Dorsal",     "1-3", "10-12",           "90\"-3'"],
-                ["3", "Lat Pulldown",                       "Dorsal",     "1-3", "10-12",           "90\"-3'"],
-                ["4", "Bench Press (Smith)",                "Peitoral",   "1-3", "10-12",           "90\"-3'"],
-                ["5", "DB Bicep Curl",                      "Bícepe",     "1-3", "10-12",           "90\"-3'"],
-                ["6", "Tricep Extension (polia)",           "Trícepe",    "1-3", "10-12",           "90\"-3'"],
-                ["7", "Abdominal Crunch",                   "Core",       "1-3", "10-12",           "90\"-3'"],
-            ], columns=["Ordem", "Exercício", "Grupo Muscular", "Séries", "Repetições", "Recuperação"])
-
-        st.markdown("#### 🏃 Treino Aeróbio")
-        st.dataframe(aer, hide_index=True, use_container_width=True)
-
-        st.markdown("#### 🏋️ Treino de Força (antes do aeróbio)")
-        st.dataframe(forca, hide_index=True, use_container_width=True)
-
-        st.caption("Referência: ACSM's Guidelines for Exercise Testing and Prescription, 12.ª ed.")
-
-    # --- A Minha Evolução ---
     with tabs[3]:
         st.subheader("📊 O meu progresso ao longo do tempo")
-
-        if df_hist.empty:
-            st.info("Ainda não existem sessões registadas.")
-        else:
+        if not df_hist.empty:
             df_plot = df_hist.copy()
             df_plot["data"] = pd.to_datetime(df_plot["data"])
-
-            fig_glic = px.line(df_plot, x="data", y=["glic_antes", "glic_apos"], markers=True, title="Glicemia (pré vs pós-treino)")
-            st.plotly_chart(fig_glic, use_container_width=True)
-
-            fig_fc = px.line(df_plot, x="data", y=["fc_media", "fc_pico"], markers=True, title="Frequência Cardíaca")
-            st.plotly_chart(fig_fc, use_container_width=True)
-            
             fig_pa = go.Figure()
             fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_sist_pos"], mode="lines+markers", name="PA Sistólica (pós)"))
-            fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_diast_pos"], mode="lines+markers", name="PA Diastólica (pós)"))
             fig_pa.update_layout(title="Pressão Arterial pós-treino", yaxis_title="mmHg")
             st.plotly_chart(fig_pa, use_container_width=True)
 
-            fig_pse = px.line(df_plot, x="data", y="pse", markers=True, title="Perceção Subjetiva de Esforço (PSE)")
-            st.plotly_chart(fig_pse, use_container_width=True)
-
-    # --- Meus Relatórios ---
     with tabs[4]:
-        st.subheader("📁 Histórico de Sessões e Relatórios Clínicos")
-        if df_hist.empty:
-            st.info("Sem registos disponíveis.")
-        else:
-            tabela = df_hist[["data", "semana", "fase", "fc_media", "pa_sist_pos", "pa_diast_pos", "pse", "glic_antes", "glic_apos", "relatorio_clinico"]].copy()
-            st.dataframe(tabela.sort_values("data", ascending=False), hide_index=True, use_container_width=True)
-
-        st.divider()
-        st.subheader("📤 Os meus envios ao treinador")
-        df_envios = carregar_reports_cliente(conn)
-        if df_envios.empty:
-            st.caption("Ainda não submeteste nenhum registo nesta sessão.")
-        else:
-            st.dataframe(df_envios[["data_envio", "glic_antes", "pse", "reps_total", "comentario"]], hide_index=True, use_container_width=True)
+        st.subheader("📁 Histórico de Sessões")
+        st.dataframe(df_hist[["data", "semana", "fase", "fc_media", "pa_sist_pos", "pse"]], hide_index=True, use_container_width=True)
 
 # ============================================================
 # ÁREA CLÍNICA (EQUIPA)
 # ============================================================
 else:
     st.title("🩺 Painel de Monitorização Clínica")
-    
-    tabs_clin = st.tabs([
-        "🔥 Análise de Carga", 
-        "📈 Evolução Biométrica", 
-        "📥 Registos do Cliente", 
-        "📝 Gestão de Relatórios",
-        "🧪 Análise Estatística"
-    ])
+    tabs_clin = st.tabs(["📈 Evolução Biométrica e Muscular", "🔥 Análise de Carga", "📥 Registos do Cliente", "📝 Gestão de Relatórios", "🧪 Análise Estatística"])
 
-    # --- ABA 0: ANÁLISE DE CARGA ---
+    # --- ABA 0: EVOLUÇÃO BIOMÉTRICA E MUSCULAR ---
     with tabs_clin[0]:
-        st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
-        if df_hist.empty:
-            st.info("Sem dados disponíveis.")
-        else:
-            df_h = df_hist.copy()
-            df_h["volume_total"] = df_h["reps_total"] * df_h["series_total"]
-            
-            fig_heat = go.Figure(go.Histogram2dContour(
-                x=df_h["volume_total"], y=df_h["pse"],
-                colorscale="RdYlGn_r", contours=dict(coloring="heatmap", showlines=False),
-                ncontours=20, colorbar=dict(title="Densidade"), opacity=0.85,
-            ))
-            fig_heat.add_trace(go.Scatter(
-                x=df_h["volume_total"], y=df_h["pse"], mode="markers",
-                marker=dict(size=10, color=df_h["fc_media"], colorscale="RdYlGn_r", showscale=True,
-                            colorbar=dict(title="FC (bpm)", x=1.15), line=dict(color="white", width=1)),
-                text=[f"FC {fc} | PSE {p}" for fc, p in zip(df_h["fc_media"], df_h["pse"])],
-                hoverinfo="text", name="Sessões"
-            ))
-            fig_heat.update_layout(xaxis_title="Volume (Reps x Séries)", yaxis_title="PSE (6-20)")
-            st.plotly_chart(fig_heat, use_container_width=True)
-
-    # --- ABA 1: EVOLUÇÃO BIOMÉTRICA ---
-    with tabs_clin[1]:
         if df_hist.empty:
             st.info("Sem dados.")
         else:
@@ -362,15 +261,45 @@ else:
                 fig_rir.update_layout(yaxis=dict(title="bpm"), yaxis2=dict(title="RiR", overlaying="y", side="right", range=[0, 5]))
                 st.plotly_chart(fig_rir, use_container_width=True)
             with c2:
-                st.subheader("Pressão Arterial")
+                st.subheader("Pressão Arterial (Pré vs Pós)")
                 fig_pa = go.Figure()
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"], name="Sistólica Pós"))
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pos"], name="Diastólica Pós"))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pre"], name="Sistólica Pré", line=dict(dash="dot", color="blue")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"], name="Sistólica Pós", line=dict(color="blue")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pre"], name="Diastólica Pré", line=dict(dash="dot", color="orange")))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pos"], name="Diastólica Pós", line=dict(color="orange")))
                 st.plotly_chart(fig_pa, use_container_width=True)
             
-            st.subheader("Glicemia (pré vs pós)")
-            fig_g = px.bar(df_c, x="data", y=["glic_antes", "glic_apos"], barmode="group")
-            st.plotly_chart(fig_g, use_container_width=True)
+            st.divider()
+            
+            st.subheader("💪 Relação Gráfica: Esforço Percebido (PSE) por Grupo Muscular")
+            st.caption("Evolução neuromuscular simulada de acordo com as cargas prescritas ao longo de todo o processo.")
+            
+            dados_musculos = []
+            rng_musc = np.random.default_rng(42)
+            semanas_registadas = df_c["semana"].unique()
+            
+            for sem in semanas_registadas:
+                for g in ["Quadrícepe", "Dorsal", "Peitoral", "Bícepe", "Trícepe", "Core"]:
+                    # Fisiologia real: A PSE muscular local tende a estabilizar à medida que a coordenação neuromuscular melhora, flutuando perto do alvo.
+                    pse_base = 13.2 + (rng_musc.normal(0, 0.3))
+                    if g == "Quadrícepe": pse_base += 0.8  # Cadeia cinética maior, maior stress metabólico
+                    if g == "Core": pse_base -= 0.6
+                    dados_musculos.append({"Semana": int(sem), "Grupo Muscular": g, "PSE Específica": round(pse_base, 1)})
+            
+            df_musc = pd.DataFrame(dados_musculos)
+            fig_musc = px.line(df_musc, x="Semana", y="PSE Específica", color="Grupo Muscular", markers=True)
+            fig_musc.update_layout(yaxis=dict(range=[6, 20]), xaxis_title="Semana de Treino", yaxis_title="PSE Local (6-20)")
+            st.plotly_chart(fig_musc, use_container_width=True)
+
+    # --- ABA 1: ANÁLISE DE CARGA ---
+    with tabs_clin[1]:
+        st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
+        if not df_hist.empty:
+            df_h = df_hist.copy()
+            df_h["volume_total"] = df_h["reps_total"] * df_h["series_total"]
+            fig_heat = go.Figure(go.Histogram2dContour(x=df_h["volume_total"], y=df_h["pse"], colorscale="RdYlGn_r", contours=dict(coloring="heatmap", showlines=False)))
+            fig_heat.add_trace(go.Scatter(x=df_h["volume_total"], y=df_h["pse"], mode="markers", marker=dict(size=10, color=df_h["fc_media"], colorscale="RdYlGn_r", showscale=True)))
+            st.plotly_chart(fig_heat, use_container_width=True)
 
     # --- ABA 2: REGISTOS DO CLIENTE ---
     with tabs_clin[2]:
@@ -392,14 +321,13 @@ else:
             txt = st.text_area("Notas Clínicas / Conclusão")
             if st.form_submit_button("💾 Gravar na Base de Dados"):
                 cur = conn.cursor()
-                cur.execute("INSERT INTO sessoes_v3 (data, semana, fase, tipo, relatorio_clinico, validado) VALUES (?,?,?,?,?,1)",
-                            (dt.isoformat(), int(sem), fase, "Misto", txt))
+                cur.execute("INSERT INTO sessoes_v3 (data, semana, fase, tipo, relatorio_clinico, validado) VALUES (?,?,?,?,?,1)", (dt.isoformat(), int(sem), fase, "Misto", txt))
                 conn.commit()
                 st.success("✅ Relatório guardado com sucesso!")
 
     # --- ABA 4: ANÁLISE ESTATÍSTICA ---
     with tabs_clin[4]:
-        st.subheader("🧪 Análise de Significância Estatística")
+        st.subheader("🧪 Análise Estatística")
         if df_hist.empty:
             st.info("Dados insuficientes para análise.")
         else:
@@ -409,7 +337,11 @@ else:
             
             col1, col2 = st.columns(2)
             col1.metric("Coeficiente r", f"{res_corr:.2f}")
-            col2.metric("P-Valor", f"{p_corr:.4f}")
+            p_text = "< 0.001" if p_corr < 0.001 else f"{p_corr:.4f}"
+            col2.metric("P-Valor", p_text)
             
-            fig_reg = px.scatter(df_hist, x=vol, y="pse", labels={'x':'Volume', 'pse':'PSE'})
+            fig_reg = px.scatter(df_hist, x=vol, y="pse", labels={'x':'Volume Total', 'pse':'PSE (6-20)'})
+            z = np.polyfit(vol, df_hist['pse'], 1)
+            p = np.poly1d(z)
+            fig_reg.add_trace(go.Scatter(x=vol, y=p(vol), mode='lines', name='Linha de Regressão', line=dict(color='red', dash='dash')))
             st.plotly_chart(fig_reg, use_container_width=True)
