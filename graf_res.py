@@ -194,7 +194,7 @@ def get_logo_html(filename="logo.png"):
     return "<div style='font-size: 50px;'>🫀</div>"
 
 st.sidebar.markdown(f"""
-    <div style='text-align: center; padding-bottom: 20px;'>
+    <div style='text-align: center; padding-bottom: 10px;'>
         {get_logo_html()}
         <h2 style='color: #2c3e50; margin-bottom: 0;'>BestCare Pro</h2>
         <p style='color: #7f8c8d; font-size: 0.85em; font-weight: 550;'>PLATAFORMA CLÍNICA INTEGRADA</p>
