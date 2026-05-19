@@ -338,144 +338,12 @@ if user_role == "👤 Área do Cliente (José)":
                          hide_index=True, use_container_width=True)
 
 # ============================================================
-# ÁREA CLÍNICA (EQUIPA)
-# ============================================================
-else:
-    st.title("🩺 Painel de Monitorização Clínica")
-    tabs_clin = st.tabs(["🔥 Análise de Carga (Heatmap)",
-                         "📈 Evolução Biométrica",
-                         "📥 Registos do Cliente",
-                         "📝 Gestão de Relatórios"])
-
-    # --- Heatmap fluido ---
-    with tabs_clin[0]:
-        st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
-        st.caption("Cada ponto = uma sessão. A cor representa a FC média (bpm). "
-                   "Quanto mais o ponto sobe (PSE alta) com volume elevado, maior o risco de fadiga.")
-
-        if df_hist.empty:
-            st.info("Sem dados.")
-        else:
-            df_h = df_hist.copy()
-            df_h["volume_total"] = df_h["reps_total"] * df_h["series_total"]
-
-            # Heatmap interpolado (contour) — espectro contínuo
-            fig_heat = go.Figure(go.Histogram2dContour(
-                x=df_h["volume_total"], y=df_h["pse"],
-                colorscale="RdYlGn_r",
-                contours=dict(coloring="heatmap", showlines=False),
-                ncontours=20,
-                colorbar=dict(title="Densidade de sessões"),
-                opacity=0.85,
-            ))
-            # Pontos reais por cima
-            fig_heat.add_trace(go.Scatter(
-                x=df_h["volume_total"], y=df_h["pse"],
-                mode="markers",
-                marker=dict(size=10, color=df_h["fc_media"],
-                            colorscale="RdYlGn_r", showscale=True,
-                            colorbar=dict(title="FC média (bpm)", x=1.15),
-                            line=dict(color="white", width=1)),
-                text=[f"FC {fc} bpm · PSE {p} · Vol {v}"
-                      for fc, p, v in zip(df_h["fc_media"], df_h["pse"], df_h["volume_total"])],
-                hoverinfo="text", name="Sessões",
-            ))
-            fig_heat.update_layout(
-                xaxis_title="Volume Total de Treino (repetições × séries)",
-                yaxis_title="Esforço Percebido — PSE (6-20)",
-                height=520,
-            )
-            st.plotly_chart(fig_heat, use_container_width=True)
-
-            st.markdown("""
-            **Como ler este gráfico:**
-            - 🟢 **Verde** — Boa relação esforço/volume. O cliente tolera bem a carga.
-            - 🟡 **Amarelo** — Zona de atenção. O esforço percebido começa a subir.
-            - 🔴 **Vermelho** — Esforço alto para o volume executado → possível **fadiga, descompensação ou necessidade de ajuste da prescrição**.
-            
-            > Em termos clínicos: idealmente, à medida que o programa progride, os pontos devem **descer** (PSE menor) para o **mesmo volume** — sinal de adaptação cardiovascular.
-            """)
-
-    # --- Evolução Biométrica ---
-    with tabs_clin[1]:
-        if df_hist.empty:
-            st.info("Sem dados.")
-        else:
-            df_c = df_hist.copy()
-            df_c["data"] = pd.to_datetime(df_c["data"])
-
-            c1, c2 = st.columns(2)
-            with c1:
-                st.subheader("FC média vs RiR")
-                fig_rir = go.Figure()
-                fig_rir.add_trace(go.Scatter(x=df_c["data"], y=df_c["fc_media"],
-                                             name="FC Média", mode="lines+markers"))
-                fig_rir.add_trace(go.Bar(x=df_c["data"], y=df_c["rir_medio"],
-                                         name="RiR", opacity=0.4, yaxis="y2"))
-                fig_rir.update_layout(yaxis=dict(title="bpm"),
-                                      yaxis2=dict(title="RiR", overlaying="y",
-                                                  side="right", range=[0, 5]))
-                st.plotly_chart(fig_rir, use_container_width=True)
-
-            with c2:
-                st.subheader("Pressão Arterial (pré vs pós)")
-                fig_pa = go.Figure()
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pre"],
-                                            name="Sist. pré", line=dict(dash="dot")))
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"],
-                                            name="Sist. pós"))
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pre"],
-                                            name="Diast. pré", line=dict(dash="dot")))
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pos"],
-                                            name="Diast. pós"))
-                fig_pa.update_layout(yaxis_title="mmHg")
-                st.plotly_chart(fig_pa, use_container_width=True)
-
-            st.subheader("Glicemia (pré vs pós)")
-            fig_g = px.bar(df_c, x="data", y=["glic_antes", "glic_apos"],
-                           barmode="group", labels={"value": "mg/dL"})
-            st.plotly_chart(fig_g, use_container_width=True)
-
-    # --- Registos enviados pelo cliente ---
-    with tabs_clin[2]:
-        st.subheader("📥 Submissões do Cliente (BD: reports_cliente)")
-        df_envios = carregar_reports_cliente(conn)
-        if df_envios.empty:
-            st.info("Sem submissões pendentes.")
-        else:
-            st.dataframe(df_envios, hide_index=True, use_container_width=True)
-            st.caption(f"Ficheiro físico: `{DB_PATH}` · Tabela: `reports_cliente`")
-
-    # --- Gestão de Relatórios ---
-    with tabs_clin[3]:
-        st.subheader("✍️ Validar e Publicar Relatório Clínico")
-        with st.form("relatorio_clinico"):
-            ca, cb = st.columns(2)
-            data_s = ca.date_input("Data da Sessão", value=date.today())
-            semana_s = cb.number_input("Semana", 1, 12, 3)
-            fase_s = st.selectbox("Fase", ["Inicial", "Desenvolvimento"])
-            texto = st.text_area("Conclusão Clínica da Sessão")
-            if st.form_submit_button("💾 Guardar e Publicar"):
-                cur = conn.cursor()
-                cur.execute("""INSERT INTO sessoes_v3
-                    (data, semana, fase, tipo, relatorio_clinico, validado)
-                    VALUES (?,?,?,?,?,1)""",
-                    (data_s.isoformat(), int(semana_s), fase_s, "Misto", texto))
-                conn.commit()
-                st.success(f"✅ Relatório de {data_s} publicado na BD.")
-
-        st.divider()
-        st.write("📂 **Últimos registos na BD:**")
-        st.dataframe(df_hist[["data", "semana", "fase", "pse", "fc_media",
-                              "pa_sist_pos", "relatorio_clinico"]].tail(8),
-                     hide_index=True, use_container_width=True)
-
-# ============================================================
-# ÁREA CLÍNICA (EQUIPA)
+# 🩺 ÁREA CLÍNICA (EQUIPA)
 # ============================================================
 else:
     st.title("🩺 Painel de Monitorização Clínica")
     
+    # Criamos as 5 abas de uma só vez (Unificando as versões anteriores)
     tabs_clin = st.tabs([
         "🔥 Análise de Carga", 
         "📈 Evolução Biométrica", 
@@ -487,6 +355,7 @@ else:
     # --- ABA 0: ANÁLISE DE CARGA ---
     with tabs_clin[0]:
         st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
+        st.caption("Cada ponto representa uma sessão. A cor indica a FC média.")
         if df_hist.empty:
             st.info("Sem dados disponíveis.")
         else:
@@ -546,7 +415,7 @@ else:
     # --- ABA 3: GESTÃO DE RELATÓRIOS ---
     with tabs_clin[3]:
         st.subheader("✍️ Publicar Relatório de Sessão")
-        with st.form("relatorio_clinico_form"):
+        with st.form("relatorio_clinico_final"):
             c_a, c_b = st.columns(2)
             dt = c_a.date_input("Data", value=date.today())
             sem = c_b.number_input("Semana", 1, 12, 1)
@@ -565,7 +434,8 @@ else:
         if df_hist.empty:
             st.info("Dados insuficientes para análise.")
         else:
-            st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
+            # 1. Correlação
+            st.markdown("#### 1. Correlação: Volume vs. Esforço (PSE)")
             vol = df_hist['reps_total'] * df_hist['series_total']
             res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
             
@@ -573,6 +443,21 @@ else:
             col1.metric("Coeficiente r", f"{res_corr:.2f}")
             col2.metric("P-Valor", f"{p_corr:.4f}")
             
-            # Gráfico de regressão simples
-            fig_reg = px.scatter(df_hist, x=vol, y="pse", trendline="ols", labels={'x':'Volume', 'pse':'PSE'})
+            # 2. Regressão
+            fig_reg = px.scatter(df_hist, x=vol, y="pse", trendline="ols", 
+                                 labels={'x':'Volume Total', 'pse':'Esforço (PSE)'},
+                                 title="Linha de Tendência (Regressão Linear)")
             st.plotly_chart(fig_reg, use_container_width=True)
+            
+            # 3. Teste T (Glicemia)
+            st.markdown("---")
+            st.markdown("#### 2. Teste t: Glicemia (Início vs Atual)")
+            g_inicio = df_hist[df_hist['semana'] <= 2]['glic_antes']
+            g_atual = df_hist[df_hist['semana'] > 2]['glic_antes']
+            
+            if len(g_inicio) > 1 and len(g_atual) > 1:
+                t_stat, p_val = stats.ttest_ind(g_inicio, g_atual)
+                if p_val < 0.05:
+                    st.success(f"Diferença significativa encontrada! (p={p_val:.4f})")
+                else:
+                    st.info(f"Sem diferença estatística relevante (p={p_val:.4f})")
