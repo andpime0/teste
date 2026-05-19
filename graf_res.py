@@ -444,7 +444,7 @@ else:
             col2.metric("P-Valor", f"{p_corr:.4f}")
             
             # 2. Regressão
-            fig_reg = px.scatter(df_hist, x=vol, y="pse", trendline="ols", 
+                fig_reg = px.scatter(df_hist, x=vol, y="pse", labels={'x':'Volume', 'pse':'PSE'})
                                  labels={'x':'Volume Total', 'pse':'Esforço (PSE)'},
                                  title="Linha de Tendência (Regressão Linear)")
             st.plotly_chart(fig_reg, use_container_width=True)
