@@ -5,8 +5,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, date
 import sqlite3
-import calendar
 import scipy.stats as stats
+import base64
+import os
 
 st.set_page_config(page_title="BestCare Pro | Sistema Integrado", page_icon="🫀", layout="wide")
 
@@ -44,6 +45,7 @@ st.markdown("""
     hr { margin-top: 1.5em; margin-bottom: 1.5em; border: 0; border-top: 1px solid #ecf0f1; }
     </style>
     """, unsafe_allow_html=True)
+
 # ---------- PACIENTE ----------
 PACIENTE = {"nome": "José Oliveira", "idade": 55, "fc_max": 145, "fc_rep": 72, "vo2_prev": 35.4}
 DATA_INICIO_PROGRAMA = date.today() - timedelta(weeks=5)
@@ -52,7 +54,7 @@ def calc_karvonen(int_min, int_max):
     fcr = PACIENTE["fc_max"] - PACIENTE["fc_rep"]
     return int(fcr*int_min + PACIENTE["fc_rep"]), int(fcr*int_max + PACIENTE["fc_rep"])
 
-# ---------- BASE DE DADOS (Atualizada para v7) ----------
+# ---------- BASE DE DADOS ----------
 DB_PATH = "bestcare_v7.db"
 
 def get_conn():
@@ -82,8 +84,7 @@ def init_db():
 def seed_se_vazio(conn):
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM sessoes_v3")
-    if c.fetchone()[0] > 0:
-        return
+    if c.fetchone()[0] > 0: return
     
     hoje = date.today()
     rng = np.random.default_rng(42)
@@ -92,46 +93,34 @@ def seed_se_vazio(conn):
         f = i/15
         fase = "Inicial" if i <= 6 else "Desenvolvimento"
         
-        # Carga Externa Progressiva (Volume Realista)
         series = 9 if fase == "Inicial" else 12
         n_ex = 6 if fase == "Inicial" else 7
         reps = int(80 + 70*f + rng.integers(-10, 10))
         volume = reps * series
         
-        # Resposta Cardiovascular Crónica Dinâmica
         fc_alvo = 102 + (118-102)*f
         fc_media = int(fc_alvo + rng.normal(0, 2))
         fc_pico = fc_media + int(rng.integers(10, 15))
-        
         pa_sist_pre = int(132 + rng.normal(0, 3))
         pa_diast_pre = int(83 + rng.normal(0, 2))
-        
-        # Adaptação minimiza o pico pós-treino apesar do aumento substancial de volume
         pa_sist_pos = int(pa_sist_pre + 16 - (3*f) + rng.normal(0, 3))
         pa_diast_pos = int(pa_diast_pre + 3 + rng.normal(0, 2))
         
-        # NOVA LÓGICA FISIOLÓGICA DA PSE: Estabilizada na zona terapêutica alvo (13-14)
-        # O esforço percebido flutua ligeiramente devido à titulação correta da carga
         pse = int(13 + rng.integers(-1, 2)) 
-        if volume > 1500: 
-            pse = int(14 + rng.integers(-1, 2))
+        if volume > 1500: pse = int(14 + rng.integers(-1, 2))
         
         glic_a = int(145 - 20*f + rng.normal(0, 4))
         glic_p = int(115 - 10*f + rng.normal(0, 4))
-        rir = int(2 + rng.integers(0, 2)) # RiR mantido estavelmente entre 2 e 3
+        rir = int(2 + rng.integers(0, 2))
         
         data_s = (hoje - timedelta(days=(16-i)*2)).isoformat()
 
         c.execute("""INSERT INTO sessoes_v3
-            (data, semana, fase, tipo, fc_media, fc_pico,
-             pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
-             pse, reps_total, series_total, n_exercicios,
-             glic_antes, glic_apos, rir_medio, relatorio_clinico, validado)
+            (data, semana, fase, tipo, fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
+             pse, reps_total, series_total, n_exercicios, glic_antes, glic_apos, rir_medio, relatorio_clinico, validado)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
-            (data_s, (i//3)+1, fase, "Misto", fc_media, fc_pico,
-             pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
-             pse, reps, series, n_ex, glic_a, glic_p, rir,
-             f"Sessão {i} ({fase}): Sobrecarga progressiva devidamente titulada. Utente estável dentro do limiar prescrito."))
+            (data_s, (i//3)+1, fase, "Misto", fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
+             pse, reps, series, n_ex, glic_a, glic_p, rir, f"Sessão {i} ({fase}): Utente estável."))
     conn.commit()
 
 def carregar_sessoes(conn):
@@ -151,25 +140,21 @@ def inserir_report_cliente(conn, pa_s, pa_d, glic, pse, reps, comentario):
 conn = init_db()
 seed_se_vazio(conn)
 df_hist = carregar_sessoes(conn)
+PLANO = {DATA_INICIO_PROGRAMA + timedelta(weeks=s, days=d): {"fase": "Inicial" if s<2 else "Desenvolvimento", "tipo": t, "semana": s+1} 
+         for s in range(5) for d, t in zip([0,2,4], ["Força + Aeróbio", "Aeróbio", "Força + Aeróbio"])}
 
-# ---------- CALENDÁRIO ----------
-def gerar_calendario():
-    plano = {}
-    for semana in range(5):
-        for dia_offset, tipo_sessao in zip([0,2,4], ["Força + Aeróbio", "Aeróbio", "Força + Aeróbio"]):
-            d = DATA_INICIO_PROGRAMA + timedelta(weeks=semana, days=dia_offset)
-            fase = "Inicial" if semana < 2 else "Desenvolvimento"
-            plano[d] = {"fase": fase, "tipo": tipo_sessao, "semana": semana+1}
-    return plano
+# ---------- SIDEBAR COM LOGÓTIPO LOCAL ----------
+def get_logo_html(filename="logo.png"):
+    if os.path.exists(filename):
+        with open(filename, 'rb') as f:
+            data = base64.b64encode(f.read()).decode()
+        return f"<img src='data:image/png;base64,{data}' width='180' style='margin-bottom: 10px;'>"
+    return "<div style='font-size: 50px;'>🫀</div>"
 
-PLANO = gerar_calendario()
-
-# ---------- SIDEBAR ----------
-# Se um dia tiveres o logo da tua clínica, podes usar: st.sidebar.image("logo_clinica.png", use_container_width=True)
-
-st.sidebar.markdown("""
+st.sidebar.markdown(f"""
     <div style='text-align: center; padding-bottom: 20px;'>
-        <h2 style='color: #2c3e50; margin-bottom: 0;'>🏥 BestCare Pro</h2>
+        {get_logo_html()}
+        <h2 style='color: #2c3e50; margin-bottom: 0;'>BestCare Pro</h2>
         <p style='color: #7f8c8d; font-size: 0.85em; font-weight: 500;'>PLATAFORMA CLÍNICA INTEGRADA</p>
     </div>
 """, unsafe_allow_html=True)
@@ -180,10 +165,12 @@ st.sidebar.divider()
 st.sidebar.markdown("### Processo Clínico")
 st.sidebar.info(f"**Utente:** {PACIENTE['nome']}\n\n**Idade:** {PACIENTE['idade']} anos\n\n**Alvo VO₂:** {PACIENTE['vo2_prev']} ml/kg/min")
 
+
 # ============================================================
 # ÁREA DO CLIENTE
 # ============================================================
-if user_role == "👤 Área do Utente (José)":
+# A CORREÇÃO ESTÁ AQUI: O nome do rádio tem de corresponder exatamente!
+if user_role == "👤 Portal do Utente":
     st.title(f"Olá, Sr. {PACIENTE['nome'].split()[0]}! 👋")
     tabs = st.tabs(["🚀 Próximo Treino", "📅 Meu Calendário", "💪 Plano de Treino", "📈 A Minha Evolução", "📋 Meus Relatórios"])
 
@@ -269,7 +256,6 @@ else:
     st.title("🩺 Painel de Monitorização Clínica")
     tabs_clin = st.tabs(["📈 Evolução Biométrica e Muscular", "🔥 Análise de Carga", "📥 Registos do Cliente", "📝 Gestão de Relatórios", "🧪 Análise Estatística"])
 
-    # --- ABA 0: EVOLUÇÃO BIOMÉTRICA E MUSCULAR ---
     with tabs_clin[0]:
         if df_hist.empty:
             st.info("Sem dados.")
@@ -294,9 +280,7 @@ else:
                 st.plotly_chart(fig_pa, use_container_width=True)
             
             st.divider()
-            
             st.subheader("💪 Relação Gráfica: Esforço Percebido (PSE) por Grupo Muscular")
-            st.caption("Evolução neuromuscular simulada de acordo com as cargas prescritas ao longo de todo o processo.")
             
             dados_musculos = []
             rng_musc = np.random.default_rng(42)
@@ -304,9 +288,8 @@ else:
             
             for sem in semanas_registadas:
                 for g in ["Quadrícepe", "Dorsal", "Peitoral", "Bícepe", "Trícepe", "Core"]:
-                    # Fisiologia real: A PSE muscular local tende a estabilizar à medida que a coordenação neuromuscular melhora, flutuando perto do alvo.
                     pse_base = 13.2 + (rng_musc.normal(0, 0.3))
-                    if g == "Quadrícepe": pse_base += 0.8  # Cadeia cinética maior, maior stress metabólico
+                    if g == "Quadrícepe": pse_base += 0.8
                     if g == "Core": pse_base -= 0.6
                     dados_musculos.append({"Semana": int(sem), "Grupo Muscular": g, "PSE Específica": round(pse_base, 1)})
             
@@ -315,7 +298,6 @@ else:
             fig_musc.update_layout(yaxis=dict(range=[6, 20]), xaxis_title="Semana de Treino", yaxis_title="PSE Local (6-20)")
             st.plotly_chart(fig_musc, use_container_width=True)
 
-    # --- ABA 1: ANÁLISE DE CARGA ---
     with tabs_clin[1]:
         st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
         if not df_hist.empty:
@@ -325,7 +307,6 @@ else:
             fig_heat.add_trace(go.Scatter(x=df_h["volume_total"], y=df_h["pse"], mode="markers", marker=dict(size=10, color=df_h["fc_media"], colorscale="RdYlGn_r", showscale=True)))
             st.plotly_chart(fig_heat, use_container_width=True)
 
-    # --- ABA 2: REGISTOS DO CLIENTE ---
     with tabs_clin[2]:
         st.subheader("📥 Submissões Recentes (App Cliente)")
         df_envios = carregar_reports_cliente(conn)
@@ -334,7 +315,6 @@ else:
         else:
             st.dataframe(df_envios, hide_index=True, use_container_width=True)
 
-    # --- ABA 3: GESTÃO DE RELATÓRIOS ---
     with tabs_clin[3]:
         st.subheader("✍️ Publicar Relatório de Sessão")
         with st.form("relatorio_clinico_form"):
@@ -349,13 +329,11 @@ else:
                 conn.commit()
                 st.success("✅ Relatório guardado com sucesso!")
 
-    # --- ABA 4: ANÁLISE ESTATÍSTICA ---
     with tabs_clin[4]:
         st.subheader("🧪 Análise Estatística")
         if df_hist.empty:
             st.info("Dados insuficientes para análise.")
         else:
-            st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
             vol = df_hist['reps_total'] * df_hist['series_total']
             res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
             
