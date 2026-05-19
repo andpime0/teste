@@ -11,42 +11,43 @@ import os
 
 st.set_page_config(page_title="BestCare Pro | Sistema Integrado", page_icon="🫀", layout="wide")
 
+# ---------- ESTILOS CLÍNICOS E TABELAS ----------
 st.markdown("""
     <style>
-    /* Fundo da aplicação num tom cinza/azul muito suave (clínico) */
     .main { background-color: #f4f6f9; }
-    
-    /* Tipografia mais limpa para cabeçalhos */
     h1, h2, h3 { color: #2c3e50; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     
-    /* Cartões de Métricas (KPIs) com estilo rigoroso */
+    /* Tabelas de Prescrição Estilizadas */
+    .prescricao-table {
+        width: 100%; border-collapse: collapse; margin: 10px 0;
+        background-color: white; border-radius: 8px; overflow: hidden;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .prescricao-table th { background-color: #2c3e50; color: white; padding: 12px; text-align: left; }
+    .prescricao-table td { padding: 10px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+    .header-fase { padding: 10px; color: white; font-weight: bold; border-radius: 5px; margin-bottom: 5px; }
+    
+    /* Cartões de Métricas e Dashboards */
     .stMetric { background-color: #ffffff; padding: 15px; border-radius: 8px;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 4px solid #2980b9; }
-                
-    /* Botões sóbrios e profissionais */
     .stButton>button { width: 100%; border-radius: 6px; height: 3em; border: none; font-weight: 600;
                        background-color: #2c3e50; color: white; transition: all 0.3s ease; }
     .stButton>button:hover { background-color: #34495e; color: white; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-    
-    /* Cartões informativos de fase/estado */
     .client-card { background-color: #ffffff; padding: 20px; border-radius: 8px; 
                    box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-top: 4px solid #2980b9; }
-    .clinical-card { background-color: #ffffff; padding: 20px; border-radius: 8px; 
-                     box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-top: 4px solid #27ae60; }
-                     
-    /* Calendário modernizado e limpo */
-    .cal-day { background:#fff; border-radius:6px; padding:10px; min-height:90px; 
+                   
+    /* Calendário modernizado */
+    .cal-day { background:#fff; border-radius:6px; padding:10px; min-height:95px; 
                border:1px solid #e1e8ed; margin:2px; font-size:0.85em; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
     .cal-inicial { border-left: 4px solid #2ecc71; background-color: #f9fdfa; }
     .cal-desenv  { border-left: 4px solid #f39c12; background-color: #fffcf8; }
+    .cal-manutencao { border-left: 4px solid #e74c3c; background-color: #fef9f8; }
     .cal-rest    { background:#f5f7f9; color:#95a5a6; border-color: #ecf0f1; }
-    
-    /* Linhas divisórias mais suaves */
     hr { margin-top: 1.5em; margin-bottom: 1.5em; border: 0; border-top: 1px solid #ecf0f1; }
     </style>
     """, unsafe_allow_html=True)
 
-# ---------- PACIENTE ----------
+# ---------- PACIENTE E BASE DE DADOS ----------
 PACIENTE = {"nome": "José Oliveira", "idade": 55, "fc_max": 145, "fc_rep": 72, "vo2_prev": 35.4}
 DATA_INICIO_PROGRAMA = date.today() - timedelta(weeks=5)
 
@@ -54,8 +55,7 @@ def calc_karvonen(int_min, int_max):
     fcr = PACIENTE["fc_max"] - PACIENTE["fc_rep"]
     return int(fcr*int_min + PACIENTE["fc_rep"]), int(fcr*int_max + PACIENTE["fc_rep"])
 
-# ---------- BASE DE DADOS ----------
-DB_PATH = "bestcare_v7.db"
+DB_PATH = "bestcare_v8.db"
 
 def get_conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -84,7 +84,8 @@ def init_db():
 def seed_se_vazio(conn):
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM sessoes_v3")
-    if c.fetchone()[0] > 0: return
+    if c.fetchone()[0] > 0:
+        return
     
     hoje = date.today()
     rng = np.random.default_rng(42)
@@ -93,22 +94,27 @@ def seed_se_vazio(conn):
         f = i/15
         fase = "Inicial" if i <= 6 else "Desenvolvimento"
         
+        # Cargas e Volumes
         series = 9 if fase == "Inicial" else 12
         n_ex = 6 if fase == "Inicial" else 7
         reps = int(80 + 70*f + rng.integers(-10, 10))
         volume = reps * series
         
+        # Dinâmica Fisiológica
         fc_alvo = 102 + (118-102)*f
         fc_media = int(fc_alvo + rng.normal(0, 2))
         fc_pico = fc_media + int(rng.integers(10, 15))
+        
         pa_sist_pre = int(132 + rng.normal(0, 3))
         pa_diast_pre = int(83 + rng.normal(0, 2))
         pa_sist_pos = int(pa_sist_pre + 16 - (3*f) + rng.normal(0, 3))
         pa_diast_pos = int(pa_diast_pre + 3 + rng.normal(0, 2))
         
+        # PSE estabilizada na zona alvo
         pse = int(13 + rng.integers(-1, 2)) 
-        if volume > 1500: pse = int(14 + rng.integers(-1, 2))
-        
+        if volume > 1500: 
+            pse = int(14 + rng.integers(-1, 2))
+            
         glic_a = int(145 - 20*f + rng.normal(0, 4))
         glic_p = int(115 - 10*f + rng.normal(0, 4))
         rir = int(2 + rng.integers(0, 2))
@@ -116,11 +122,15 @@ def seed_se_vazio(conn):
         data_s = (hoje - timedelta(days=(16-i)*2)).isoformat()
 
         c.execute("""INSERT INTO sessoes_v3
-            (data, semana, fase, tipo, fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
-             pse, reps_total, series_total, n_exercicios, glic_antes, glic_apos, rir_medio, relatorio_clinico, validado)
+            (data, semana, fase, tipo, fc_media, fc_pico,
+             pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
+             pse, reps_total, series_total, n_exercicios,
+             glic_antes, glic_apos, rir_medio, relatorio_clinico, validado)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
-            (data_s, (i//3)+1, fase, "Misto", fc_media, fc_pico, pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
-             pse, reps, series, n_ex, glic_a, glic_p, rir, f"Sessão {i} ({fase}): Utente estável."))
+            (data_s, (i//3)+1, fase, "Misto", fc_media, fc_pico,
+             pa_sist_pre, pa_diast_pre, pa_sist_pos, pa_diast_pos,
+             pse, reps, series, n_ex, glic_a, glic_p, rir,
+             f"Sessão {i} ({fase}): Utente estável dentro do limiar prescrito."))
     conn.commit()
 
 def carregar_sessoes(conn):
@@ -136,12 +146,74 @@ def inserir_report_cliente(conn, pa_s, pa_d, glic, pse, reps, comentario):
               (datetime.now().isoformat(timespec="minutes"), pa_s, pa_d, glic, pse, reps, comentario))
     conn.commit()
 
-# ---------- INIT ----------
+# Inicialização
 conn = init_db()
 seed_se_vazio(conn)
 df_hist = carregar_sessoes(conn)
-PLANO = {DATA_INICIO_PROGRAMA + timedelta(weeks=s, days=d): {"fase": "Inicial" if s<2 else "Desenvolvimento", "tipo": t, "semana": s+1} 
-         for s in range(5) for d, t in zip([0,2,4], ["Força + Aeróbio", "Aeróbio", "Força + Aeróbio"])}
+
+# ---------- CONTEÚDO DAS PRESCRIÇÕES (ÁREA DO UTENTE) ----------
+def render_prescricao_geral(fase):
+    if fase == "Inicial":
+        color = "#2ecc71"
+        rows = """
+        <tr><td><b>Aeróbio</b></td><td>5 dias/semana</td><td>RPE 11-12 (leve)</td><td>30'/sessão</td><td>Caminhadas/bicicleta</td></tr>
+        <tr><td><b>Força</b></td><td>2 dias/semana</td><td>10-15 reps (leve)</td><td>6-10 exerc. (1-2 séries)</td><td>Máquinas/Pesos livres</td></tr>
+        <tr><td><b>Flexibilidade</b></td><td>2 dias/semana</td><td>Estáticos/Dinâmicos</td><td>10-15" cada</td><td>Tai-chi/Alongamento</td></tr>
+        """
+    elif fase == "Desenvolvimento":
+        color = "#f39c12"
+        rows = """
+        <tr><td><b>Aeróbio</b></td><td>5 dias/semana</td><td>RPE 14-17 (moderado)</td><td>30'/sessão</td><td>Bicicleta/Caminhada rápida</td></tr>
+        <tr><td><b>Força</b></td><td>3 dias/semana</td><td>10-12 reps (moderado)</td><td>5-10 exerc. (1-3 séries)</td><td>Pesos livres/Calistenia</td></tr>
+        <tr><td><b>Flexibilidade</b></td><td>2 dias/semana</td><td>Estáticos</td><td>15" cada</td><td>Ioga/Alongamento</td></tr>
+        """
+    else: # Manutenção
+        color = "#e74c3c"
+        rows = """
+        <tr><td><b>Aeróbio</b></td><td>5 dias/semana</td><td>RPE 14-17 (moderado)</td><td>30'/sessão</td><td>Ciclos de baixo impacto</td></tr>
+        <tr><td><b>Força</b></td><td>4 dias/semana</td><td>6-12 reps (hipertrofia/força)</td><td>5-10 exerc. (2-5 séries)</td><td>Deadlift, Snatch, Bench Press</td></tr>
+        <tr><td><b>Flexibilidade</b></td><td>2 dias/semana</td><td>Estáticos/Ioga</td><td>10-15 reps</td><td>Manutenção da ADM</td></tr>
+        """
+    
+    html = f"""
+    <div class="header-fase" style="background-color:{color}">Prescrição para a Fase {fase}</div>
+    <table class="prescricao-table">
+        <tr><th>Componente</th><th>Frequência</th><th>Intensidade</th><th>Tempo</th><th>Tipo</th></tr>
+        {rows}
+    </table>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+def render_sessao_tipo(fase):
+    st.markdown(f"#### 📝 Detalhe da Sessão Tipo - Fase {fase}")
+    if fase == "Inicial":
+        data = [
+            ["1", "Agachamento (Smith)", "Quadrícepe", "1-2", "10-15", "60-90s"],
+            ["2", "Lat Pulldown", "Dorsal", "1-2", "10-15", "60-90s"],
+            ["3", "Bench Press (Smith)", "Peitoral", "1-2", "10-15", "60-90s"],
+            ["4", "Bicep Curl", "Bícepe", "1-2", "10-15", "60-90s"],
+            ["5", "Tricep Extension", "Trícepe", "1-2", "10-15", "60-90s"],
+            ["6", "Abdominal Crunch", "Core", "1-2", "10-15", "60-90s"]
+        ]
+    elif fase == "Desenvolvimento":
+        data = [
+            ["1", "Agachamento (Smith)", "Quadrícepe", "1-3", "10-12", "90s-3min"],
+            ["2", "Deadlift", "Dorsal", "1-3", "10-12", "90s-3min"],
+            ["3", "Lat Pulldown", "Dorsal", "1-3", "10-12", "90s-3min"],
+            ["4", "Bench Press", "Peitoral", "1-3", "10-12", "90s-3min"],
+            ["5", "Bicep Curl", "Bícepe", "1-3", "10-12", "90s-3min"],
+            ["6", "Abdominal Crunch", "Core", "1-3", "10-12", "90s-3min"]
+        ]
+    else: # Manutenção
+        data = [
+            ["1", "Agachamento/Hang Snatch", "Quadrícepe/Potência", "2-5", "6-12", "90s-3min"],
+            ["2", "Deadlift", "Dorsal", "2-5", "6-12", "90s-3min"],
+            ["3", "Bench Press", "Peitoral", "2-5", "6-12", "90s-3min"],
+            ["4", "Bicep/Tricep DB superset", "Braços", "2-5", "6-12", "90s-3min"],
+            ["5", "L-Sit (Progression)", "Core", "2-5", "10-15s", "90s-3min"]
+        ]
+    df = pd.DataFrame(data, columns=["Ordem", "Exercício", "Músculo", "Séries", "Reps", "Recuperação"])
+    st.table(df)
 
 # ---------- SIDEBAR COM LOGÓTIPO LOCAL ----------
 def get_logo_html(filename="logo.png"):
@@ -169,36 +241,26 @@ st.sidebar.info(f"**Utente:** {PACIENTE['nome']}\n\n**Idade:** {PACIENTE['idade'
 # ============================================================
 # ÁREA DO CLIENTE
 # ============================================================
-# A CORREÇÃO ESTÁ AQUI: O nome do rádio tem de corresponder exatamente!
 if user_role == "👤 Portal do Utente":
     st.title(f"Olá, Sr. {PACIENTE['nome'].split()[0]}! 👋")
     tabs = st.tabs(["🚀 Próximo Treino", "📅 Meu Calendário", "💪 Plano de Treino", "📈 A Minha Evolução", "📋 Meus Relatórios"])
 
+    # --- ABA 0: PRÓXIMO TREINO ---
     with tabs[0]:
-        hoje = date.today()
-        proximos = sorted([d for d in PLANO if d >= hoje])
-        prox = proximos[0] if proximos else None
-        if prox:
-            info = PLANO[prox]
-            st.markdown(f'<div class="client-card"><h4>🎯 Próxima sessão: {prox.strftime("%A, %d %b")} — Fase {info["fase"]} ({info["tipo"]})</h4></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="client-card"><h4>🎯 Próxima sessão disponível no calendário.</h4></div>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("🏃 Cardio (Zonas Alvo)")
-            if prox and PLANO[prox]["fase"] == "Inicial":
-                low, high = calc_karvonen(0.40, 0.60); zona = "Moderada (Fase Inicial)"
-            else:
-                low, high = calc_karvonen(0.60, 0.75); zona = "Moderada-Intensa (Desenvolvimento)"
-            st.metric("FC Alvo", f"{low} - {high} bpm", zona)
+            low, high = calc_karvonen(0.60, 0.75)
+            st.metric("FC Alvo Atual", f"{low} - {high} bpm", "Moderada-Intensa")
             fig = go.Figure(go.Indicator(mode="gauge+number", value=(low+high)//2,
                 gauge={'axis':{'range':[60,150]},'bar':{'color':"#2F5597"},
                        'steps':[{'range':[60,low],'color':"#e8f5e9"}, {'range':[low,high],'color':"#a5d6a7"}, {'range':[high,150],'color':"#ffcdd2"}]}))
             fig.update_layout(height=250)
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            st.subheader("🏋️ Força (Prescrição)")
-            st.write("**Repetições:** 12 a 15 por série")
-            st.write("**Esforço (PSE):** 'Cansado' (13-14)")
-            st.info("💡 Deve sentir que conseguia fazer +2/3 reps no fim de cada série (RiR 2-3).")
+            st.subheader("🏋️ Dica de Força")
+            st.info("💡 Lembre-se: Deve sentir que conseguia fazer +2/3 reps no fim de cada série (RiR 2-3).")
 
         st.divider()
         with st.form("registo_jose"):
@@ -215,26 +277,41 @@ if user_role == "👤 Portal do Utente":
                 inserir_report_cliente(conn, pa_s_pre, pa_d_pre, g_antes, pse_jose, reps_jose, coment)
                 st.success("✅ Dados enviados e gravados na BD!")
 
+    # --- ABA 1: CALENDÁRIO ---
     with tabs[1]:
-        st.subheader("📅 Plano das próximas 5 semanas")
-        for semana in range(5):
-            inicio_sem = DATA_INICIO_PROGRAMA + timedelta(weeks=semana)
-            st.markdown(f"**Semana {semana+1}** — início {inicio_sem.strftime('%d/%m')}")
+        st.subheader("📅 Plano de Atividade Semanal")
+        fase_atual = st.selectbox("Visualizar calendário para a fase:", ["Inicial", "Desenvolvimento", "Manutenção"])
+        
+        if fase_atual == "Inicial":
+            config = {0:"Força + Aeróbio", 1:"Aeróbio", 2:"Aeróbio", 3:"Força + Aeróbio", 4:"Aeróbio"}
+            cls = "cal-inicial"
+        elif fase_atual == "Desenvolvimento":
+            config = {0:"Força + Aeróbio", 2:"Força + Aeróbio", 4:"Força + Aeróbio", 1:"Aeróbio", 3:"Aeróbio"}
+            cls = "cal-desenv"
+        else:
+            config = {0:"Força + Aeróbio", 1:"Força + Aeróbio", 3:"Força + Aeróbio", 4:"Força + Aeróbio", 2:"Aeróbio"}
+            cls = "cal-manutencao"
+
+        for sem in range(1, 3):
+            st.markdown(f"**Semana {sem}**")
             cols = st.columns(7)
-            for i, nome in enumerate(["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]):
-                d = inicio_sem + timedelta(days=i)
+            dias = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+            for i in range(7):
                 with cols[i]:
-                    if d in PLANO:
-                        info = PLANO[d]
-                        cls = "cal-inicial" if info["fase"]=="Inicial" else "cal-desenv"
-                        st.markdown(f'<div class="cal-day {cls}"><b>{nome} {d.day}</b><br>{info["tipo"]}<br><small>{info["fase"]}</small></div>', unsafe_allow_html=True)
+                    if i in config:
+                        st.markdown(f'<div class="cal-day {cls}"><b>{dias[i]}</b><br>{config[i]}<br><small>30 min</small></div>', unsafe_allow_html=True)
                     else:
-                        st.markdown(f'<div class="cal-day cal-rest"><b>{nome} {d.day}</b><br><small>Descanso</small></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="cal-day cal-rest"><b>{dias[i]}</b><br>Descanso</div>', unsafe_allow_html=True)
 
+    # --- ABA 2: PLANO DE TREINO ---
     with tabs[2]:
-        st.subheader("💪 Sessões Tipo")
-        st.write("Configurações padrão mapeadas por fase no portal clínico.")
+        st.subheader("💪 Orientação Técnica por Fase")
+        fase_view = st.segment_control("Selecione a Fase para consultar:", ["Inicial", "Desenvolvimento", "Manutenção"], default="Inicial")
+        render_prescricao_geral(fase_view)
+        st.divider()
+        render_sessao_tipo(fase_view)
 
+    # --- ABA 3: EVOLUÇÃO ---
     with tabs[3]:
         st.subheader("📊 O meu progresso ao longo do tempo")
         if not df_hist.empty:
@@ -245,6 +322,7 @@ if user_role == "👤 Portal do Utente":
             fig_pa.update_layout(title="Pressão Arterial pós-treino", yaxis_title="mmHg")
             st.plotly_chart(fig_pa, use_container_width=True)
 
+    # --- ABA 4: HISTÓRICO ---
     with tabs[4]:
         st.subheader("📁 Histórico de Sessões")
         st.dataframe(df_hist[["data", "semana", "fase", "fc_media", "pa_sist_pos", "pse"]], hide_index=True, use_container_width=True)
@@ -256,6 +334,7 @@ else:
     st.title("🩺 Painel de Monitorização Clínica")
     tabs_clin = st.tabs(["📈 Evolução Biométrica e Muscular", "🔥 Análise de Carga", "📥 Registos do Cliente", "📝 Gestão de Relatórios", "🧪 Análise Estatística"])
 
+    # --- ABA CLÍNICA 0: EVOLUÇÃO BIOMÉTRICA E MUSCULAR ---
     with tabs_clin[0]:
         if df_hist.empty:
             st.info("Sem dados.")
@@ -280,7 +359,9 @@ else:
                 st.plotly_chart(fig_pa, use_container_width=True)
             
             st.divider()
+            
             st.subheader("💪 Relação Gráfica: Esforço Percebido (PSE) por Grupo Muscular")
+            st.caption("Evolução neuromuscular simulada de acordo com as cargas prescritas ao longo de todo o processo.")
             
             dados_musculos = []
             rng_musc = np.random.default_rng(42)
@@ -298,6 +379,7 @@ else:
             fig_musc.update_layout(yaxis=dict(range=[6, 20]), xaxis_title="Semana de Treino", yaxis_title="PSE Local (6-20)")
             st.plotly_chart(fig_musc, use_container_width=True)
 
+    # --- ABA CLÍNICA 1: ANÁLISE DE CARGA ---
     with tabs_clin[1]:
         st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
         if not df_hist.empty:
@@ -305,8 +387,10 @@ else:
             df_h["volume_total"] = df_h["reps_total"] * df_h["series_total"]
             fig_heat = go.Figure(go.Histogram2dContour(x=df_h["volume_total"], y=df_h["pse"], colorscale="RdYlGn_r", contours=dict(coloring="heatmap", showlines=False)))
             fig_heat.add_trace(go.Scatter(x=df_h["volume_total"], y=df_h["pse"], mode="markers", marker=dict(size=10, color=df_h["fc_media"], colorscale="RdYlGn_r", showscale=True)))
+            fig_heat.update_layout(xaxis_title="Volume (Reps x Séries)", yaxis_title="PSE (6-20)")
             st.plotly_chart(fig_heat, use_container_width=True)
 
+    # --- ABA CLÍNICA 2: REGISTOS DO CLIENTE ---
     with tabs_clin[2]:
         st.subheader("📥 Submissões Recentes (App Cliente)")
         df_envios = carregar_reports_cliente(conn)
@@ -315,13 +399,14 @@ else:
         else:
             st.dataframe(df_envios, hide_index=True, use_container_width=True)
 
+    # --- ABA CLÍNICA 3: GESTÃO DE RELATÓRIOS ---
     with tabs_clin[3]:
         st.subheader("✍️ Publicar Relatório de Sessão")
         with st.form("relatorio_clinico_form"):
             c_a, c_b = st.columns(2)
             dt = c_a.date_input("Data", value=date.today())
             sem = c_b.number_input("Semana", 1, 12, 1)
-            fase = st.selectbox("Fase", ["Inicial", "Desenvolvimento", "Melhoria"])
+            fase = st.selectbox("Fase", ["Inicial", "Desenvolvimento", "Manutenção"])
             txt = st.text_area("Notas Clínicas / Conclusão")
             if st.form_submit_button("💾 Gravar na Base de Dados"):
                 cur = conn.cursor()
@@ -329,11 +414,13 @@ else:
                 conn.commit()
                 st.success("✅ Relatório guardado com sucesso!")
 
+    # --- ABA CLÍNICA 4: ANÁLISE ESTATÍSTICA ---
     with tabs_clin[4]:
         st.subheader("🧪 Análise Estatística")
         if df_hist.empty:
             st.info("Dados insuficientes para análise.")
         else:
+            st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
             vol = df_hist['reps_total'] * df_hist['series_total']
             res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
             
