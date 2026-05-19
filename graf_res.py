@@ -475,6 +475,7 @@ else:
 # ============================================================
 else:
     st.title("🩺 Painel de Monitorização Clínica")
+    
     tabs_clin = st.tabs([
         "🔥 Análise de Carga", 
         "📈 Evolução Biométrica", 
@@ -486,23 +487,24 @@ else:
     with tabs_clin[0]:
         st.subheader("🔥 Relação entre Volume de Treino e Esforço Percebido")
         if df_hist.empty:
-            st.info("Sem dados.")
+            st.info("Sem dados disponíveis.")
         else:
             df_h = df_hist.copy()
             df_h["volume_total"] = df_h["reps_total"] * df_h["series_total"]
+            
             fig_heat = go.Figure(go.Histogram2dContour(
                 x=df_h["volume_total"], y=df_h["pse"],
                 colorscale="RdYlGn_r", contours=dict(coloring="heatmap", showlines=False),
-                ncontours=20, colorbar=dict(title="Densidade de sessões"), opacity=0.85,
+                ncontours=20, colorbar=dict(title="Densidade"), opacity=0.85,
             ))
             fig_heat.add_trace(go.Scatter(
                 x=df_h["volume_total"], y=df_h["pse"], mode="markers",
                 marker=dict(size=10, color=df_h["fc_media"], colorscale="RdYlGn_r", showscale=True,
-                            colorbar=dict(title="FC média (bpm)", x=1.15), line=dict(color="white", width=1)),
-                text=[f"FC {fc} bpm · PSE {p} · Vol {v}" for fc, p, v in zip(df_h["fc_media"], df_h["pse"], df_h["volume_total"])],
-                hoverinfo="text", name="Sessões",
+                            colorbar=dict(title="FC (bpm)", x=1.15), line=dict(color="white", width=1)),
+                text=[f"FC {fc} | PSE {p}" for fc, p in zip(df_h["fc_media"], df_h["pse"])],
+                hoverinfo="text", name="Sessões"
             ))
-            fig_heat.update_layout(xaxis_title="Volume Total (reps × séries)", yaxis_title="PSE (6-20)", height=520)
+            fig_heat.update_layout(xaxis_title="Volume (Reps x Séries)", yaxis_title="PSE (6-20)")
             st.plotly_chart(fig_heat, use_container_width=True)
 
     with tabs_clin[1]:
@@ -516,67 +518,65 @@ else:
                 st.subheader("FC média vs RiR")
                 fig_rir = go.Figure()
                 fig_rir.add_trace(go.Scatter(x=df_c["data"], y=df_c["fc_media"], name="FC Média", mode="lines+markers"))
-                fig_rir.add_trace(go.Bar(x=df_c["data"], y=df_c["rir_medio"], name="RiR", opacity=0.4, yaxis="y2"))
+                fig_rir.add_trace(go.Bar(x=df_c["data"], y=df_c["rir_medio"], name="RiR", opacity=0.3, yaxis="y2"))
                 fig_rir.update_layout(yaxis=dict(title="bpm"), yaxis2=dict(title="RiR", overlaying="y", side="right", range=[0, 5]))
                 st.plotly_chart(fig_rir, use_container_width=True)
             with c2:
                 st.subheader("Pressão Arterial")
                 fig_pa = go.Figure()
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pre"], name="Sist. pré", line=dict(dash="dot")))
-                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"], name="Sist. pós"))
-                fig_pa.update_layout(yaxis_title="mmHg")
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_sist_pos"], name="Sistólica Pós"))
+                fig_pa.add_trace(go.Scatter(x=df_c["data"], y=df_c["pa_diast_pos"], name="Diastólica Pós"))
                 st.plotly_chart(fig_pa, use_container_width=True)
-            st.subheader("Glicemia (pré vs pós)")
-            fig_g = px.bar(df_c, x="data", y=["glic_antes", "glic_apos"], barmode="group", labels={"value": "mg/dL"})
-            st.plotly_chart(fig_g, use_container_width=True)
 
     with tabs_clin[2]:
-        st.subheader("📥 Submissões do Cliente")
+        st.subheader("📥 Submissões Recentes")
         df_envios = carregar_reports_cliente(conn)
-        if df_envios.empty:
-            st.info("Sem submissões.")
-        else:
-            st.dataframe(df_envios, hide_index=True, use_container_width=True)
+        st.dataframe(df_envios, hide_index=True, use_container_width=True)
 
     with tabs_clin[3]:
-        st.subheader("✍️ Validar e Publicar Relatório")
+        st.subheader("✍️ Publicar Relatório de Sessão")
         with st.form("relatorio_clinico"):
-            ca, cb = st.columns(2)
-            data_s = ca.date_input("Data da Sessão", value=date.today())
-            semana_s = cb.number_input("Semana", 1, 12, 3)
-            fase_s = st.selectbox("Fase", ["Inicial", "Desenvolvimento"])
-            texto = st.text_area("Conclusão Clínica")
-            if st.form_submit_button("💾 Guardar"):
+            c_a, c_b = st.columns(2)
+            dt = c_a.date_input("Data", value=date.today())
+            sem = c_b.number_input("Semana", 1, 12, 1)
+            fase = st.selectbox("Fase", ["Inicial", "Desenvolvimento", "Melhoria"])
+            txt = st.text_area("Notas Clínicas")
+            if st.form_submit_button("💾 Gravar na Base de Dados"):
                 cur = conn.cursor()
                 cur.execute("INSERT INTO sessoes_v3 (data, semana, fase, tipo, relatorio_clinico, validado) VALUES (?,?,?,?,?,1)",
-                            (data_s.isoformat(), int(semana_s), fase_s, "Misto", texto))
+                            (dt.isoformat(), int(sem), fase, "Misto", txt))
                 conn.commit()
-                st.success("✅ Relatório publicado.")
+                st.success("Relatório guardado!")
 
     with tabs_clin[4]:
-        st.subheader("📊 Relatório Estatístico Avançado")
-        st.write("---")
-        st.markdown("#### 1. Correlação: Carga Externa vs. Esforço (PSE)")
-        corr, p_val_corr = stats.pearsonr(df_hist['reps_total'] * df_hist['series_total'], df_hist['pse'])
-        nivel = "Alta" if abs(corr) >= 0.7 else "Moderada" if abs(corr) >= 0.4 else "Leve"
-        c1, c2 = st.columns(2)
-        c1.metric("Coeficiente (r)", f"{corr:.2f}")
-        c2.metric("Nível de Correlação", nivel)
-        fig_reg = sns.lmplot(x='reps_total', y='pse', data=df_hist, aspect=1.5)
-        st.pyplot(fig_reg.fig)
-        st.caption(f"Volume total vs PSE. p-valor: {p_val_corr:.4f}")
-
-        st.write("---")
-        st.markdown("#### 2. Teste t: Glicemia (Inicial vs Melhoria)")
-        fase_i = df_hist[df_hist['semana'] <= 4]['glic_antes']
-        fase_m = df_hist[df_hist['semana'] > 4]['glic_antes']
-        if not fase_i.empty and not fase_m.empty:
-            t, p = stats.ttest_ind(fase_i, fase_m)
-            st.write(f"Média Inicial: **{fase_i.mean():.1f}** | Média Melhoria: **{fase_m.mean():.1f}**")
-            if p < 0.05: st.success(f"Resultado Significativo! (p={p:.4f})")
-            else: st.warning(f"Resultado Não Significativo (p={p:.4f})")
+        st.subheader("🧪 Análise de Significância Estatística")
+        st.markdown("---")
         
-        st.write("---")
-        st.markdown("#### 3. Tendência: Eficiência de Carga")
-        fig_e = px.scatter(df_hist, x="reps_total", y="pse", trendline="ols")
-        st.plotly_chart(fig_e, use_container_width=True)
+        # 1. Correlação Carga/PSE
+        st.markdown("#### 1. Correlação: Carga vs. PSE")
+        vol = df_hist['reps_total'] * df_hist['series_total']
+        res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
+        
+        col1, col2 = st.columns(2)
+        col1.metric("Coeficiente r", f"{res_corr:.2f}")
+        col2.metric("P-Valor", f"{p_corr:.4f}")
+        
+        fig_st = sns.lmplot(x='reps_total', y='pse', data=df_hist, height=5, aspect=1.5)
+        st.pyplot(fig_st.fig)
+        
+        # 2. Teste t (Glicemia)
+        st.markdown("---")
+        st.markdown("#### 2. Teste t: Glicemia (Antes vs Depois)")
+        if not df_hist.empty:
+            t_stat, p_val = stats.ttest_ind(df_hist['glic_antes'], df_hist['glic_apos'])
+            st.write(f"Média Pré: **{df_hist['glic_antes'].mean():.1f}** | Média Pós: **{df_hist['glic_apos'].mean():.1f}**")
+            if p_val < 0.05:
+                st.success(f"Diferença Significativa encontrada! (p={p_val:.4f})")
+            else:
+                st.warning(f"Sem diferença estatística significativa (p={p_val:.4f})")
+
+        # 3. Regressão com Plotly
+        st.markdown("---")
+        st.markdown("#### 3. Linha de Tendência (Eficiência)")
+        fig_reg = px.scatter(df_hist, x="reps_total", y="pse", trendline="ols", trendline_color_override="red")
+        st.plotly_chart(fig_reg, use_container_width=True)
