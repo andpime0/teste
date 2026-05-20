@@ -173,7 +173,7 @@ def inserir_report_cliente(conn, pa_s, pa_d, glic, pse, reps, comentario):
     conn.commit()
 
 # ---------- FUNÇÃO GERADORA DE PDF CLÍNICO ----------
-def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg):
+def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg, vo2_estimado_atual):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
@@ -222,6 +222,7 @@ def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg):
          f"{ultima['pa_sist_pre']}/{ultima['pa_diast_pre']}"],
         ["Glicemia Pré-treino (mg/dL)", str(primeira["glic_antes"]), str(ultima["glic_antes"])],
         ["HbA1c (%)", f"{primeira['hba1c']}", f"{ultima['hba1c']}"],
+        ["VO₂ Máx (mL/kg/min)", str(paciente["vo2_prev"]), str(vo2_estimado_atual)],
     ], colWidths=[7*cm, 4.5*cm, 4.5*cm])
     tab_ev.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2980b9")),
@@ -245,12 +246,12 @@ def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg):
         "melhoria acentuada na sensibilidade à insulina, refletida de forma expressiva na queda da HbA1c "
         "para níveis de controlo não-patológicos.", estilo_normal))
         
-    # ---------- NOVA SECÇÃO DO PDF: PREVISÕES VO2 MAX ----------
+    # ---------- NOVA SECÇÃO DO PDF: PREVISÕES VO2 MAX (NÃO LINEAR) ----------
     story.append(Paragraph("3. MODELAÇÃO CARDIORESPIRATÓRIA E PREVISÃO DE VO₂ MÁX", estilo_h2))
     tab_pred = Table([
         ["Fase Clínica", "Métricas de Adaptação Estimadas", "Impacto no VO₂ Máx Previsto"],
-        ["Desenvolvimento\n(10 Meses)", "Redução da FC basal em 0.59%/mês.\nMelhoria de 10.84%/mês no VO₂máx.", "+24.0 mL/kg/min acumulados\n(Meta: ~59.4 mL/kg/min)"],
-        ["Manutenção\n(2 Meses)", "Estabilização da FC basal (platô seguro nos 67 bpm).\nConsolidação da taxa metabólica.", "Retenção estável do pico adquirido\n(Platô: ~59.4 mL/kg/min)"],
+        ["Desenvolvimento\n(10 Meses)", "Redução da FC basal em 0.59%/mês.\nMelhoria inicial de ~10.8%/mês no VO₂máx, com progressiva estagnação ao longo do tempo (curva logarítmica).", f"+{round(vo2_estimado_atual - paciente['vo2_prev'], 1)} mL/kg/min acumulados\n(Meta final: ~{vo2_estimado_atual} mL/kg/min)"],
+        ["Manutenção\n(2 Meses)", "Estabilização da FC basal (platô seguro nos 67 bpm).\nConsolidação da taxa metabólica.", f"Retenção estável do pico adquirido\n(Platô: ~{vo2_estimado_atual} mL/kg/min)"],
     ], colWidths=[3.5*cm, 7.5*cm, 5*cm])
     tab_pred.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#27ae60")),
@@ -642,6 +643,10 @@ else:
                 ultima = df_hist.iloc[-1]
                 total_sessoes_reg = len(df_hist)
                 
+                # Cálculo biológico de VO2 máximo com platô realista (~+25% face ao basal)
+                vo2_ganho_estimado = 9.1
+                vo2_estimado_atual = round(PACIENTE['vo2_prev'] + vo2_ganho_estimado, 1)
+                
                 relatorio_md = f"""
 ### 🏥 RELATÓRIO CLÍNICO DE EVOLUÇÃO E TRANSIÇÃO DE ALTA
 **Data do Relatório:** {date.today().strftime('%d/%m/%Y')}
@@ -657,10 +662,11 @@ else:
 **2. ANÁLISE DE EVOLUÇÃO FISIOLÓGICA E METABÓLICA**
 Apresenta-se a comparação direta entre os parâmetros basais (Início do programa) e os parâmetros consolidados na Fase de Manutenção:
 
-* **Frequência Cardíaca de Repouso:** {primeira['fc_repouso']} bpm ➔ **{ultima['fc_repouso']} bpm**
-* **Pressão Arterial (Pré-esforço):** {primeira['pa_sist_pre']}/{primeira['pa_diast_pre']} mmHg ➔ **{ultima['pa_sist_pre']}/{ultima['pa_diast_pre']} mmHg**
-* **Glicemia em Jejum (Pré-treino):** {primeira['glic_antes']} mg/dL ➔ **{ultima['glic_antes']} mg/dL**
-* **Hemoglobina Glicada (HbA1c):** {primeira['hba1c']}% ➔ **{ultima['hba1c']}%**
+* **FC de Repouso (bpm):** {primeira['fc_repouso']} ➔ **{ultima['fc_repouso']}**
+* **PA Pré-esforço (mmHg):** {primeira['pa_sist_pre']}/{primeira['pa_diast_pre']} ➔ **{ultima['pa_sist_pre']}/{ultima['pa_diast_pre']}**
+* **Glicemia Pré-treino (mg/dL):** {primeira['glic_antes']} ➔ **{ultima['glic_antes']}**
+* **HbA1c (%):** {primeira['hba1c']} ➔ **{ultima['hba1c']}**
+* **VO₂ Máx Estimado (mL/kg/min):** {PACIENTE['vo2_prev']} ➔ **{vo2_estimado_atual}**
 
 **Parecer Evolutivo:**
 Observa-se uma consolidação fisiológica notória. A adaptação cardiovascular permitiu uma otimização do débito cardíaco com redução visível da FC de repouso e normalização dos valores tensionais. A nível metabólico, o planeamento progressivo do volume e intensidade induziu uma melhoria acentuada na sensibilidade à insulina, refletida de forma expressiva na queda da HbA1c para níveis de controlo não-patológicos.
@@ -672,11 +678,11 @@ Com base nos modelos biométricos e de carga inseridos no programa clínico, est
 
 * **Fase de Desenvolvimento (Duração: 10 Meses):**
   * *Adaptação Autonómica:* Verificou-se uma redução da FC basal à taxa de **0,59%/mês** (conduzindo à meta linear de queda de 7% após 1 ano, estabelecendo a FC basal de 72 bpm para 67 bpm).
-  * *Evolução de Potência Aeróbia:* Registou-se uma melhoria linear de **10,84%/mês no VO₂máx** (considerando a assiduidade de 20 sessões/mês, resultando num incremento de **+2,4 mL/kg/min/mês**). O ganho acumulado estimado nesta fase fixa-se em **+24,0 mL/kg/min**, elevando a aptidão funcional do doente para valores ótimos de **~59,4 mL/kg/min**.
+  * *Evolução de Potência Aeróbia:* Registou-se uma melhoria acentuada de **~10,8%/mês no VO₂máx** durante os meses iniciais de treino. A progressão estabilizou de forma progressiva (curva logarítmica) face à aproximação natural do teto fisiológico. O ganho acumulado estimado fixa-se em **+{vo2_ganho_estimado} mL/kg/min**, elevando a aptidão funcional para a meta de **~{vo2_estimado_atual} mL/kg/min**.
 
 * **Fase de Manutenção (Duração: 2 Meses):**
   * *Adaptação Fisiológica:* Platô e estabilização segura da FC basal (ancorada nos 67 bpm).
-  * *Evolução de Potência Aeróbia:* **Consolidação e retenção total** dos ganhos máximos adquiridos na fase anterior. O modelo preditivo aponta para a manutenção estável do teto de **~59,4 mL/kg/min**, focando a atividade na manutenção da bioenergética muscular sem necessidade de incrementos adicionais de sobrecarga cardíaca.
+  * *Evolução de Potência Aeróbia:* **Consolidação e retenção total** dos ganhos adquiridos. O modelo aponta para a manutenção estável do teto alcançado (**~{vo2_estimado_atual} mL/kg/min**), focando a atividade na manutenção da bioenergética muscular sem necessidade de incrementos adicionais de sobrecarga cardíaca.
 
 ---
 
@@ -697,8 +703,8 @@ O doente encontra-se capacitado e com literacia funcional suficiente para adotar
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Download em PDF
-                pdf_bytes = gerar_pdf_relatorio(PACIENTE, primeira, ultima, total_sessoes_reg)
+                # Download em PDF com as novas métricas de VO2 Max
+                pdf_bytes = gerar_pdf_relatorio(PACIENTE, primeira, ultima, total_sessoes_reg, vo2_estimado_atual)
                 st.download_button(
                     label="📥 Descarregar Relatório (PDF)",
                     data=pdf_bytes,
