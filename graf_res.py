@@ -90,15 +90,15 @@ def seed_se_vazio(conn):
         # 4 semanas (1 mês) - Fase Inicial
         if week < 4:
             fase = "Inicial"
-            dias_treino = [0, 2, 4] # Seg, Qua, Sex
+            dias_treino = [0, 2, 4] 
         # 40 semanas (10 meses) - Fase Desenvolvimento
         elif week < 44:
             fase = "Desenvolvimento"
-            dias_treino = [0, 2, 4] # Seg, Qua, Sex
+            dias_treino = [0, 2, 4] 
         # 8 semanas (2 meses) - Fase Manutenção
         else:
             fase = "Manutenção"
-            dias_treino = [0, 1, 3, 4] # Seg, Ter, Qui, Sex (4 dias)
+            dias_treino = [0, 1, 3, 4] 
             
         for d in dias_treino:
             sessoes_plan.append({
@@ -110,7 +110,7 @@ def seed_se_vazio(conn):
     total_sessoes = len(sessoes_plan)
     
     for i, s in enumerate(sessoes_plan):
-        f = i / total_sessoes # Fator de progressão evolutiva estendido a 1 ano (0 a 1)
+        f = i / total_sessoes 
         fase = s["fase"]
         
         if fase == "Inicial":
@@ -121,7 +121,7 @@ def seed_se_vazio(conn):
             series = 12
             n_ex = 7
             reps = int(140 + rng.integers(-15, 15))
-        else: # Manutenção
+        else: 
             series = 16 
             n_ex = 8
             reps = int(160 + rng.integers(-15, 15))
@@ -134,17 +134,17 @@ def seed_se_vazio(conn):
         fc_media = int(fc_alvo + rng.normal(0, 3))
         fc_pico = fc_media + int(rng.integers(12, 18))
         
-        # Pressão Arterial (Lenta consolidação a 1 ano)
+        # Pressão Arterial
         pa_sist_pre = int(135 - (15 * f) + rng.normal(0, 2))
         pa_diast_pre = int(85 - (10 * f) + rng.normal(0, 2))
         pa_sist_pos = int(pa_sist_pre + 15 - (5*f) + rng.normal(0, 3))
         pa_diast_pos = int(pa_diast_pre + 5 + rng.normal(0, 2))
         
-        # PSE adaptativa
+        # PSE
         pse = int(12 + (2 * f) + rng.integers(-1, 2)) 
         if pse > 14: pse = 14
         
-        # Adaptação Metabólica a longo prazo
+        # Adaptação Metabólica
         glic_a = int(145 - 40*f + rng.normal(0, 4))
         glic_p = int(115 - 25*f + rng.normal(0, 4))
         hba1c = round(6.9 - (1.1 * f) + rng.normal(0, 0.05), 1)
@@ -172,7 +172,7 @@ def inserir_report_cliente(conn, pa_s, pa_d, glic, pse, reps, comentario):
                  VALUES (?,?,?,?,?,?,?)""", (datetime.now().isoformat(timespec="minutes"), pa_s, pa_d, glic, pse, reps, comentario))
     conn.commit()
 
-# ---------- FUNÇÃO GERADORA DE PDF ----------
+# ---------- FUNÇÃO GERADORA DE PDF CLÍNICO ----------
 def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -185,7 +185,7 @@ def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg):
                                    spaceAfter=12, alignment=1)
     estilo_h2 = ParagraphStyle("h2", parent=styles["Heading2"],
                                fontSize=12, textColor=colors.HexColor("#2980b9"),
-                               spaceBefore=12, spaceAfter=6)
+                               spaceBefore=14, spaceAfter=6)
     estilo_normal = ParagraphStyle("body", parent=styles["BodyText"],
                                    fontSize=10, leading=14, spaceAfter=6)
     
@@ -245,7 +245,28 @@ def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg):
         "melhoria acentuada na sensibilidade à insulina, refletida de forma expressiva na queda da HbA1c "
         "para níveis de controlo não-patológicos.", estilo_normal))
         
-    story.append(Paragraph("3. INDICAÇÕES DE ESTILO DE VIDA E INTEGRAÇÃO", estilo_h2))
+    # ---------- NOVA SECÇÃO DO PDF: PREVISÕES VO2 MAX ----------
+    story.append(Paragraph("3. MODELAÇÃO CARDIORESPIRATÓRIA E PREVISÃO DE VO₂ MÁX", estilo_h2))
+    tab_pred = Table([
+        ["Fase Clínica", "Métricas de Adaptação Estimadas", "Impacto no VO₂ Máx Previsto"],
+        ["Desenvolvimento (10 Meses)", "Redução da FC basal em 0.59%/mês.\nMelhoria de 10.84%/mês no VO₂máx.", "+24.0 mL/kg/min acumulados\n(Meta: ~59.4 mL/kg/min)"],
+        ["Manutenção (2 Meses)", "Estabilização da FC basal (platô seguro nos 67 bpm).\nConsolidação da taxa metabólica.", "Retenção estável do pico adquirido\n(Platô: ~59.4 mL/kg/min)"],
+    ], colWidths=[5*cm, 6*cm, 5*cm])
+    tab_pred.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#27ae60")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#bdc3c7")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(tab_pred)
+    story.append(Spacer(1, 0.2*cm))
+
+    story.append(Paragraph("4. INDICAÇÕES DE ESTIVO DE VIDA E INTEGRAÇÃO", estilo_h2))
     story.append(Paragraph(
         "O doente encontra-se capacitado e com literacia funcional suficiente para adotar um "
         "comportamento autónomo. Para garantir a consolidação dos ganhos a longo prazo, indicam-se "
@@ -279,94 +300,9 @@ def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg):
     buffer.seek(0)
     return buffer.getvalue()
 
-conn = init_db()
-seed_se_vazio(conn)
-df_hist = carregar_sessoes(conn)
-
-# ---------- PRESCRIÇÕES COMO DATAFRAMES NATIVOS DO STREAMLIT ----------
-def render_prescricao_geral(fase):
-    st.markdown(f"#### Prescrição Geral — {fase}")
-    if fase == "Inicial":
-        data = [
-            ["Aeróbio", "5 dias/semana", "RPE 11-12 (leve)", "30'/sessão", "Caminhadas/Bicicleta"],
-            ["Força", "2 dias/semana", "10-15 reps (leve)", "6-10 exerc.", "Máquinas/Pesos livres"],
-            ["Flexibilidade", "2 dias/semana", "Lento s/ dor", "10-15\"/cada", "Dinâmicos/Estáticos"]
-        ]
-    elif fase == "Desenvolvimento":
-        data = [
-            ["Aeróbio", "5 dias/semana", "RPE 14-17 (moderado)", "30'/sessão", "Caminhada rápida/Bicicleta"],
-            ["Força", "3 dias/semana", "10-12 reps (moderada)", "5-10 exerc.", "Pesos livres/Calistenia"],
-            ["Flexibilidade", "2 dias/semana", "Lento s/ dor", "15\"/cada", "Dinâmicos/Estáticos"]
-        ]
-    else:  # Manutenção
-        data = [
-            ["Aeróbio", "5 dias/semana", "RPE 14-17 (moderada)", "30'/sessão",
-             "Caminhada rápida intervalada c/ caminhada lenta (cíclicos baixo impacto)"],
-            ["Força (hipertrofia e força muscular)", "4 dias/semana (não consecutivos)",
-             "6-12 reps · descanso 90\"-3' (hipertrofia) / 2'-5' (força)",
-             "5-10 exerc. · 2-5 séries",
-             "Deadlift, Hang Clean, Bench Press, Squat, Hang Snatch, L-Sit"],
-            ["Flexibilidade", "2 dias/semana",
-             "Dinâmicos: lento c/ execução correta · Estáticos: máxima ROM s/ dor",
-             "Dinâmicos: 10 reps · Estáticos: 10-15\"",
-             "Estático, dinâmico, ioga ou pilates"]
-        ]
-    df = pd.DataFrame(data, columns=["Componente", "Frequência", "Intensidade", "Tempo", "Tipo"])
-    st.dataframe(df, hide_index=True, use_container_width=True)
-
-def render_sessao_tipo(fase):
-    st.markdown(f"#### 📝 Detalhe da Sessão Tipo - Fase {fase}")
-    if fase == "Inicial":
-        data = [
-            ["1", "Agachamento (Smith)", "Quadrícepe", "1-2", "10-15", "60-90s"],
-            ["2", "Lat Pulldown", "Dorsal", "1-2", "10-15", "60-90s"],
-            ["3", "Bench Press (Smith)", "Peitoral", "1-2", "10-15", "60-90s"],
-            ["4", "Bicep Curl", "Bícepe", "1-2", "10-15", "60-90s"],
-            ["5", "Tricep Extension", "Trícepe", "1-2", "10-15", "60-90s"],
-            ["6", "Abdominal Crunch", "Core", "1-2", "10-15", "60-90s"]
-        ]
-    elif fase == "Desenvolvimento":
-        data = [
-            ["1", "Agachamento (Smith)", "Quadrícepe", "1-3", "10-12", "90s-3min"],
-            ["2", "Deadlift", "Dorsal", "1-3", "10-12", "90s-3min"],
-            ["3", "Lat Pulldown", "Dorsal", "1-3", "10-12", "90s-3min"],
-            ["4", "Bench Press", "Peitoral", "1-3", "10-12", "90s-3min"],
-            ["5", "Bicep Curl", "Bícepe", "1-3", "10-12", "90s-3min"],
-            ["6", "Abdominal Crunch", "Core", "1-3", "10-12", "90s-3min"]
-        ]
-    else:  # Manutenção
-        data = [
-            ["Aquecimento específico", "Agachamento", "Quadrícepe", "2-5", "3-4 (80% da carga)", "90\"-3'"],
-            ["1", "Deadlift / Hang Clean", "Dorsal · Dorsal/Deltoide", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
-            ["2", "Squat / Hang Snatch", "Quadrícepe · Potência", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
-            ["3", "Bench Press", "Peitoral", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
-            ["4", "Bicep / Tricep DB superset", "Braços", "2-5", "6-12", "90s-3min"],
-            ["5", "L-Sit (com progressões)", "Core", "2-5", "10-15s", "90s-3min"]
-        ]
-    df = pd.DataFrame(data, columns=["Ordem", "Exercício", "Músculo", "Séries", "Reps", "Recuperação"])
-    st.dataframe(df, hide_index=True, use_container_width=True)
-
-# ---------- SIDEBAR COM LOGÓTIPO LOCAL ----------
-def get_logo_html(filename="logo.png"):
-    if os.path.exists(filename):
-        with open(filename, 'rb') as f:
-            data = base64.b64encode(f.read()).decode()
-        return f"<img src='data:image/png;base64,{data}' width='300' style='margin-bottom: 0px;'>"
-    return "<div style='font-size: 40px;'>🫀</div>"
-
-st.sidebar.markdown(f"""
-    <div style='text-align: center; padding-bottom: 10px;'>
-        {get_logo_html()}
-        <h2 style='color: #2c3e50; margin-bottom: 0;'>BestCare Pro</h2>
-        <p style='color: #7f8c8d; font-size: 0.85em; font-weight: 550;'>PLATAFORMA CLÍNICA INTEGRADA</p>
-    </div>
-""", unsafe_allow_html=True)
-
-user_role = st.sidebar.radio("Navegação do Sistema:", ["👤 Portal do Utente", "🩺 Monitorização Clínica"])
-st.sidebar.divider()
-st.sidebar.markdown("### Processo Clínico")
-st.sidebar.info(f"**Utente:** {PACIENTE['nome']}\n\n**Idade:** {PACIENTE['idade']} anos\n\n**Alvo VO₂:** {PACIENTE['vo2_prev']} ml/kg/min")
-
+# ---------- CARREGAR COMPONENTES ----------
+def carregar_sessoes(conn):
+    return pd.read_sql_query("SELECT * FROM sessoes_v3 ORDER BY data", conn)
 
 # ============================================================
 # ÁREA DO CLIENTE
@@ -380,7 +316,7 @@ if user_role == "👤 Portal do Utente":
         
         # Contador cumulativo de horas de treino
         n_sessoes_feitas = len(df_hist)
-        horas_totais = n_sessoes_feitas * 0.5  # 30 min/sessão
+        horas_totais = n_sessoes_feitas * 0.5  
         h_int = int(horas_totais)
         m_int = int(round((horas_totais - h_int) * 60))
         st.markdown(f"""
@@ -435,7 +371,6 @@ if user_role == "👤 Portal do Utente":
         if vista_calendario == "Por Fase (Detalhe Semanal)":
             fase_atual = st.selectbox("Visualizar calendário para a fase:", ["Inicial", "Desenvolvimento", "Manutenção"])
             if fase_atual == "Inicial":
-                # 3 dias de força + aeróbio (Seg/Qua/Sex), restantes aeróbio leve
                 config = {0:"Força + Aeróbio", 1:"Aeróbio", 2:"Força + Aeróbio", 3:"Aeróbio", 4:"Força + Aeróbio"}
                 cls = "cal-inicial"
                 inicio_fase = DATA_INICIO_PROGRAMA
@@ -453,7 +388,6 @@ if user_role == "👤 Portal do Utente":
                 
             st.caption(f"Fase **{fase_atual}** · {n_semanas} semanas · {len(config)} sessões/semana")
             
-            # Para fases longas (Desenvolvimento), agrupar por bloco de 4 semanas com expander
             if n_semanas <= 8:
                 intervalos = [(1, n_semanas)]
             else:
@@ -494,7 +428,7 @@ if user_role == "👤 Portal do Utente":
                 st.write("")
 
     with tabs[2]:
-        st.subheader("💪 Orientação Técnica por Fase")
+        st.subheader("💪 Orientação Técnico por Fase")
         fase_view = st.radio("Selecione a Fase para consultar:", ["Inicial", "Desenvolvimento", "Manutenção"], horizontal=True)
         render_prescricao_geral(fase_view)
         st.divider()
@@ -507,9 +441,7 @@ if user_role == "👤 Portal do Utente":
         else:
             df_plot = df_hist.copy()
             df_plot["data"] = pd.to_datetime(df_plot["data"])
-            
             col_a, col_b = st.columns(2)
-            
             with col_a:
                 fig_pa = go.Figure()
                 fig_pa.add_trace(go.Scatter(x=df_plot["data"], y=df_plot["pa_sist_pre"], mode="lines+markers", name="Sistólica (Pré)", line=dict(color="#3498db", dash="dot")))
@@ -613,9 +545,10 @@ else:
                 st.success("✅ Relatório guardado!")
                 st.rerun()
 
+        # ================= ZONA DE RELATÓRIO FINAL COM MÉTRICAS PREDITIVAS =================
         st.divider()
         st.subheader("🎓 Relatório Final de Caso Clínico")
-        st.info("Produção automática de relatório completo para a equipa de tratamento com análise da evolução anual e guidelines de transição para a vida autónoma.")
+        st.info("Produção automática de relatório completo para a equipa de tratamento com análise da evolução anual, modelação preditiva de capacidade funcional e transição autónoma.")
         
         if st.button("📄 Gerar Relatório Final do Caso Clínico", type="primary"):
             if not df_hist.empty:
@@ -648,30 +581,36 @@ Observa-se uma consolidação fisiológica notória. A adaptação cardiovascula
 
 ---
 
-**3. INDICAÇÕES DE ESTILO DE VIDA E INTEGRAÇÃO (A entregar à equipa de tratamento)**
+**3. MODELAÇÃO CARDIORESPIRATÓRIA E PREVISÃO DE VO₂ MÁX**
+Com base nos modelos biométricos e de carga inseridos no programa clínico, estruturou-se a seguinte análise preditiva do comportamento funcional:
+
+* **Fase de Desenvolvimento (Duração: 10 Meses):**
+  * *Adaptação Autonómica:* Verificou-se uma redução da FC basal à taxa de **0,59%/mês** (conduzindo à meta linear de queda de 7% após 1 ano, estabelecendo a FC basal de 72 bpm para 67 bpm).
+  * *Evolução de Potência Aeróbia:* Registou-se uma melhoria linear de **10,84%/mês no VO₂máx** (considerando a assiduidade de 20 sessões/mês, resultando num incremento de **+2,4 mL/kg/min/mês**). O ganho acumulado estimado nesta fase fixa-se em **+24,0 mL/kg/min**, elevando a aptidão funcional do doente para valores ótimos de **~59,4 mL/kg/min**.
+* **Fase de Manutenção (Duração: 2 Meses):**
+  * *Adaptação Fisiológica:* Platô e estabilização segura da FC basal (ancorada nos 67 bpm).
+  * *Evolução de Potência Aeróbia:* **Consolidação e retenção total** dos ganhos máximos adquiridos na fase anterior. O modelo preditivo aponta para a manutenção estável do teto de **~59,4 mL/kg/min**, focando a atividade na manutenção da bioenergética muscular sem necessidade de incrementos adicionais de sobrecarga cardíaca.
+
+---
+
+**4. INDICAÇÕES DE ESTILO DE VIDA E INTEGRAÇÃO (A entregar à equipa de tratamento)**
 O doente encontra-se capacitado e com literacia funcional suficiente para adotar um comportamento autónomo. Para garantir a consolidação dos ganhos a longo prazo, indicam-se as seguintes guidelines baseadas na Fase de Manutenção:
 
-* **Gestão Cardiovascular (Aeróbio):** 
-  Manter atividade aeróbia 5 dias por semana (ex: caminhada rápida intervalada com intensidade cíclica). Somar pelo menos 150 minutos semanais mantendo uma zona de RPE 14-17 (moderada).
-* **Treino de Força e Hipertrofia:** 
-  Manter a rotina de 2 a 4 dias por semana (não consecutivos) focada em exercícios multiarticulares (Agachamento, Deadlift, Bench Press). Realizar entre 6 a 12 repetições mantendo um RiR (Reps in Reserve) de 2 a 3.
-* **Rotina Ativa no Dia-a-Dia:** 
-  Privilegiar o transporte ativo, evitar o uso de elevadores e quebrar ciclos de sedentarismo prolongado a cada 90 minutos.
-* **Sinais de Alerta e Monitorização:** 
-  O utente está familiarizado com a monitorização de sinais vitais e da Escala de Esforço de Borg. É aconselhada a verificação semanal em casa da Glicemia de jejum e Pressão Arterial, contatando a equipa de tratamento primário caso se verifique um recrudescimento sistemático dos valores.
+* **Gestão Cardiovascular (Aeróbio):** Manter atividade aeróbia 5 dias por semana (ex: caminhada rápida intervalada com intensidade cíclica). Somar pelo menos 150 minutos semanais mantendo uma zona de RPE 14-17 (moderada).
+* **Treino de Força e Hipertrofia:** Manter a rotina de 2 a 4 dias por semana (não consecutivos) focada em exercícios multiarticulares (Agachamento, Deadlift, Bench Press). Realizar entre 6 a 12 repetições mantendo um RiR (Reps in Reserve) de 2 a 3.
+* **Rotina Ativa no Dia-a-Dia:** Privilegiar o transporte ativo, evitar o uso de elevadores e quebrar ciclos de sedentarismo prolongado a cada 90 minutos.
+* **Sinais de Alerta e Monitorização:** O utente está familiarizado com a monitorização de sinais vitais e da Escala de Esforço de Borg. É aconselhada a verificação semanal em casa da Glicemia de jejum e Pressão Arterial, contactando a equipa de tratamento primário caso se verifique um recrudescimento sistemático dos valores.
 
-**Assinatura:** 
-*Equipa de Fisiologia do Exercício | BestCare Pro*
+**Assinatura:** *Equipa de Fisiologia do Exercício | BestCare Pro*
                 """
                 
-                # Exibe o relatório gerado de forma limpa na app
                 st.markdown(f"""
                 <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border-left: 5px solid #27ae60; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-top: 20px;">
                     {relatorio_md}
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Download em PDF
+                # Download em PDF com as novas métricas em tabelas ReportLab
                 pdf_bytes = gerar_pdf_relatorio(PACIENTE, primeira, ultima, total_sessoes_reg)
                 st.download_button(
                     label="📥 Descarregar Relatório (PDF)",
