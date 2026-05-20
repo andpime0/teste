@@ -183,11 +183,11 @@ def render_sessao_tipo(fase):
         ]
     else:  # Manutenção
         data = [
-            ["1", "Deadlift / Hang Clean", "Dorsal · Dorsal/Deltoide", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
-            ["2", "Squat / Hang Snatch", "Quadrícepe · Potência", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
-            ["3", "Bench Press", "Peitoral", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
-            ["4", "Bicep / Tricep DB superset", "Braços", "2-5", "6-12", "90s-3min"],
-            ["5", "L-Sit (com progressões)", "Core", "2-5", "10-15s", "90s-3min"]
+            ["1", "Agachamento / Hang Snatch", "Quadrícepe", "2-5", "3-4", "2-5min"],
+            ["2", "Deadlift", "Dorsal", "2-5", "6-12", "90s-3min"],
+            ["3", "Bench Press", "Peitoral", "2-5", "6-12", "90s-3min"],
+            ["4", "DB Bicep curl / Tricep extension", "Bícepe; Trícepe", "2-5", "6-12", "90s-3min"],
+            ["5", "L-Sit (com progressões)", "Core", "6-12", "10-15s", "90s-3min"]
         ]
     df = pd.DataFrame(data, columns=["Ordem", "Exercício", "Músculo", "Séries", "Reps", "Recuperação"])
     st.dataframe(df, hide_index=True, use_container_width=True)
