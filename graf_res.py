@@ -145,11 +145,18 @@ def render_prescricao_geral(fase):
             ["Força", "3 dias/semana", "10-12 reps (moderada)", "5-10 exerc.", "Pesos livres/Calistenia"],
             ["Flexibilidade", "2 dias/semana", "Lento s/ dor", "15\"/cada", "Dinâmicos/Estáticos"]
         ]
-    else: # Manutenção
+    else:  # Manutenção
         data = [
-            ["Aeróbio", "5 dias/semana", "RPE 14-17 (moderada)", "30'/sessão", "Ciclos de baixo impacto"],
-            ["Força", "4 dias/semana", "6-12 reps (hipertrofia)", "5-10 exerc.", "Deadlift, Snatch, Bench Press"],
-            ["Flexibilidade", "2 dias/semana", "Máxima ROM", "10-15 reps", "Manutenção da ADM"]
+            ["Aeróbio", "5 dias/semana", "RPE 14-17 (moderada)", "30'/sessão",
+             "Caminhada rápida intervalada c/ caminhada lenta (cíclicos baixo impacto)"],
+            ["Força (hipertrofia e força muscular)", "4 dias/semana (não consecutivos)",
+             "6-12 reps · descanso 90\"-3' (hipertrofia) / 2'-5' (força)",
+             "5-10 exerc. · 2-5 séries",
+             "Deadlift, Hang Clean, Bench Press, Squat, Hang Snatch, L-Sit"],
+            ["Flexibilidade", "2 dias/semana",
+             "Dinâmicos: lento c/ execução correta · Estáticos: máxima ROM s/ dor",
+             "Dinâmicos: 10 reps · Estáticos: 10-15\"",
+             "Estático, dinâmico, ioga ou pilates"]
         ]
     df = pd.DataFrame(data, columns=["Componente", "Frequência", "Intensidade", "Tempo", "Tipo"])
     st.dataframe(df, hide_index=True, use_container_width=True)
@@ -174,13 +181,13 @@ def render_sessao_tipo(fase):
             ["5", "Bicep Curl", "Bícepe", "1-3", "10-12", "90s-3min"],
             ["6", "Abdominal Crunch", "Core", "1-3", "10-12", "90s-3min"]
         ]
-    else: # Manutenção
+    else:  # Manutenção
         data = [
-            ["1", "Agachamento/Hang Snatch", "Quadrícepe/Potência", "2-5", "6-12", "90s-3min"],
-            ["2", "Deadlift", "Dorsal", "2-5", "6-12", "90s-3min"],
-            ["3", "Bench Press", "Peitoral", "2-5", "6-12", "90s-3min"],
-            ["4", "Bicep/Tricep DB superset", "Braços", "2-5", "6-12", "90s-3min"],
-            ["5", "L-Sit (Progression)", "Core", "2-5", "10-15s", "90s-3min"]
+            ["1", "Deadlift / Hang Clean", "Dorsal · Dorsal/Deltoide", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
+            ["2", "Squat / Hang Snatch", "Quadrícepe · Potência", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
+            ["3", "Bench Press", "Peitoral", "2-5", "6-12", "90s-3min (hip.) / 2-5min (força)"],
+            ["4", "Bicep / Tricep DB superset", "Braços", "2-5", "6-12", "90s-3min"],
+            ["5", "L-Sit (com progressões)", "Core", "2-5", "10-15s", "90s-3min"]
         ]
     df = pd.DataFrame(data, columns=["Ordem", "Exercício", "Músculo", "Séries", "Reps", "Recuperação"])
     st.dataframe(df, hide_index=True, use_container_width=True)
