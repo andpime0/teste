@@ -45,7 +45,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ---------- PACIENTE E BASE DE DADOS ----------
-PACIENTE = {"nome": "José Oliveira", "idade": 55, "fc_max": 145, "fc_rep": 72, "vo2_prev": 35.4}
+PACIENTE = {"nome": "José Oliveira", "idade": 55, "fc_max": 145, "fc_rep": 72, "vo2_prev": 22.0}
 # Recuamos 52 semanas (1 ano inteiro)
 DATA_INICIO_PROGRAMA = date.today() - timedelta(weeks=52)
 
@@ -55,7 +55,7 @@ def calc_karvonen(int_min, int_max):
     limite_max = min(int_max, teto_seguro)
     return int(fcr*int_min + PACIENTE["fc_rep"]), int(fcr*limite_max + PACIENTE["fc_rep"])
 
-DB_PATH = "bestcare_v11.db"
+DB_PATH = "bestcare_v12.db"
 
 def get_conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -129,14 +129,14 @@ def seed_se_vazio(conn):
         volume = reps * series
         
         # Adaptação Cardiovascular a 1 ano
-        fc_repouso = int(76 - (14 * f) + rng.normal(0, 1.5))
+        fc_repouso = int(72 - (5 * f) + rng.normal(0, 1.5)) # 72 -> 67 bpm
         fc_alvo = 102 + (125-102)*f
         fc_media = int(fc_alvo + rng.normal(0, 3))
         fc_pico = fc_media + int(rng.integers(12, 18))
         
-        # Pressão Arterial
-        pa_sist_pre = int(135 - (15 * f) + rng.normal(0, 2))
-        pa_diast_pre = int(85 - (10 * f) + rng.normal(0, 2))
+        # Pressão Arterial (Alinhada c/ a Imagem: Começa em 130/80 e vai otimizando)
+        pa_sist_pre = int(130 - (10 * f) + rng.normal(0, 2))
+        pa_diast_pre = int(80 - (5 * f) + rng.normal(0, 2))
         pa_sist_pos = int(pa_sist_pre + 15 - (5*f) + rng.normal(0, 3))
         pa_diast_pos = int(pa_diast_pre + 5 + rng.normal(0, 2))
         
@@ -144,10 +144,10 @@ def seed_se_vazio(conn):
         pse = int(12 + (2 * f) + rng.integers(-1, 2)) 
         if pse > 14: pse = 14
         
-        # Adaptação Metabólica
-        glic_a = int(145 - 40*f + rng.normal(0, 4))
+        # Adaptação Metabólica (Alinhada c/ a Imagem: HbA1c de 7.5 para 6.5)
+        glic_a = int(144 - 38*f + rng.normal(0, 4))
         glic_p = int(115 - 25*f + rng.normal(0, 4))
-        hba1c = round(6.9 - (1.1 * f) + rng.normal(0, 0.05), 1)
+        hba1c = round(7.5 - (1.0 * f) + rng.normal(0, 0.05), 1)
         
         rir = int(2 + rng.integers(0, 2))
         data_s = s["data"].isoformat()
@@ -217,6 +217,7 @@ def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg, vo2_estim
     tab_ev = Table([
         ["Parâmetro", "Basal", "Atual"],
         ["FC de Repouso (bpm)", str(primeira["fc_repouso"]), str(ultima["fc_repouso"])],
+        ["FC Máxima (bpm)", str(paciente["fc_max"]), str(paciente["fc_max"])],
         ["PA Pré-esforço (mmHg)", 
          f"{primeira['pa_sist_pre']}/{primeira['pa_diast_pre']}", 
          f"{ultima['pa_sist_pre']}/{ultima['pa_diast_pre']}"],
@@ -388,7 +389,7 @@ st.sidebar.markdown(f"""
 user_role = st.sidebar.radio("Navegação do Sistema:", ["👤 Portal do Utente", "🩺 Monitorização Clínica"])
 st.sidebar.divider()
 st.sidebar.markdown("### Processo Clínico")
-st.sidebar.info(f"**Utente:** {PACIENTE['nome']}\n\n**Idade:** {PACIENTE['idade']} anos\n\n**Alvo VO₂:** {PACIENTE['vo2_prev']} ml/kg/min")
+st.sidebar.info(f"**Utente:** {PACIENTE['nome']}\n\n**Idade:** {PACIENTE['idade']} anos\n\n**VO₂ Basal:** {PACIENTE['vo2_prev']} ml/kg/min")
 
 
 # ============================================================
@@ -643,8 +644,8 @@ else:
                 ultima = df_hist.iloc[-1]
                 total_sessoes_reg = len(df_hist)
                 
-                # Cálculo biológico de VO2 máximo com platô realista (~+25% face ao basal)
-                vo2_ganho_estimado = 9.1
+                # Base de 22.0. A curva logarítmica achata para ganhos totais realistas ~+8.8 ml/kg/min (Fechando na meta de 30.8)
+                vo2_ganho_estimado = 8.8
                 vo2_estimado_atual = round(PACIENTE['vo2_prev'] + vo2_ganho_estimado, 1)
                 
                 relatorio_md = f"""
@@ -663,6 +664,7 @@ else:
 Apresenta-se a comparação direta entre os parâmetros basais (Início do programa) e os parâmetros consolidados na Fase de Manutenção:
 
 * **FC de Repouso (bpm):** {primeira['fc_repouso']} ➔ **{ultima['fc_repouso']}**
+* **FC Máxima (bpm):** {PACIENTE['fc_max']} ➔ **{PACIENTE['fc_max']}**
 * **PA Pré-esforço (mmHg):** {primeira['pa_sist_pre']}/{primeira['pa_diast_pre']} ➔ **{ultima['pa_sist_pre']}/{ultima['pa_diast_pre']}**
 * **Glicemia Pré-treino (mg/dL):** {primeira['glic_antes']} ➔ **{ultima['glic_antes']}**
 * **HbA1c (%):** {primeira['hba1c']} ➔ **{ultima['hba1c']}**
