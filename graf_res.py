@@ -9,6 +9,14 @@ import scipy.stats as stats
 import base64
 import os
 
+# Imports para o PDF (ReportLab)
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from io import BytesIO
+
 st.set_page_config(page_title="BestCare Pro | Sistema Integrado", page_icon="🫀", layout="wide")
 
 # ---------- ESTILOS CLÍNICOS E TABELAS ----------
@@ -164,6 +172,113 @@ def inserir_report_cliente(conn, pa_s, pa_d, glic, pse, reps, comentario):
                  VALUES (?,?,?,?,?,?,?)""", (datetime.now().isoformat(timespec="minutes"), pa_s, pa_d, glic, pse, reps, comentario))
     conn.commit()
 
+# ---------- FUNÇÃO GERADORA DE PDF ----------
+def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=2*cm, rightMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm
+    )
+    styles = getSampleStyleSheet()
+    estilo_titulo = ParagraphStyle("titulo", parent=styles["Heading1"],
+                                   fontSize=16, textColor=colors.HexColor("#2c3e50"),
+                                   spaceAfter=12, alignment=1)
+    estilo_h2 = ParagraphStyle("h2", parent=styles["Heading2"],
+                               fontSize=12, textColor=colors.HexColor("#2980b9"),
+                               spaceBefore=12, spaceAfter=6)
+    estilo_normal = ParagraphStyle("body", parent=styles["BodyText"],
+                                   fontSize=10, leading=14, spaceAfter=6)
+    
+    story = []
+    story.append(Paragraph("🏥 RELATÓRIO CLÍNICO DE EVOLUÇÃO E TRANSIÇÃO DE ALTA", estilo_titulo))
+    story.append(Paragraph(f"<b>Data do Relatório:</b> {date.today().strftime('%d/%m/%Y')}", estilo_normal))
+    
+    story.append(Paragraph("1. IDENTIFICAÇÃO DO DOENTE", estilo_h2))
+    tab_id = Table([
+        ["Nome", paciente["nome"]],
+        ["Idade", f"{paciente['idade']} anos"],
+        ["Programa", "Reabilitação e Exercício Clínico Integrado (1 Ano / 52 Semanas)"],
+        ["Sessões Validadas", str(total_sessoes_reg)],
+    ], colWidths=[5*cm, 11*cm])
+    tab_id.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#ecf0f1")),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#bdc3c7")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(tab_id)
+    
+    story.append(Paragraph("2. ANÁLISE DE EVOLUÇÃO FISIOLÓGICA E METABÓLICA", estilo_h2))
+    tab_ev = Table([
+        ["Parâmetro", "Basal", "Atual"],
+        ["FC de Repouso (bpm)", str(primeira["fc_repouso"]), str(ultima["fc_repouso"])],
+        ["PA Pré-esforço (mmHg)", 
+         f"{primeira['pa_sist_pre']}/{primeira['pa_diast_pre']}", 
+         f"{ultima['pa_sist_pre']}/{ultima['pa_diast_pre']}"],
+        ["Glicemia Pré-treino (mg/dL)", str(primeira["glic_antes"]), str(ultima["glic_antes"])],
+        ["HbA1c (%)", f"{primeira['hba1c']}", f"{ultima['hba1c']}"],
+    ], colWidths=[7*cm, 4.5*cm, 4.5*cm])
+    tab_ev.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2980b9")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#bdc3c7")),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(tab_ev)
+    
+    story.append(Paragraph("<b>Parecer Evolutivo:</b>", estilo_normal))
+    story.append(Paragraph(
+        "Observa-se uma consolidação fisiológica notória. A adaptação cardiovascular permitiu uma "
+        "otimização do débito cardíaco com redução visível da FC de repouso e normalização dos valores "
+        "tensionais. A nível metabólico, o planeamento progressivo do volume e intensidade induziu uma "
+        "melhoria acentuada na sensibilidade à insulina, refletida de forma expressiva na queda da HbA1c "
+        "para níveis de controlo não-patológicos.", estilo_normal))
+        
+    story.append(Paragraph("3. INDICAÇÕES DE ESTILO DE VIDA E INTEGRAÇÃO", estilo_h2))
+    story.append(Paragraph(
+        "O doente encontra-se capacitado e com literacia funcional suficiente para adotar um "
+        "comportamento autónomo. Para garantir a consolidação dos ganhos a longo prazo, indicam-se "
+        "as seguintes guidelines baseadas na Fase de Manutenção:", estilo_normal))
+        
+    bullets = [
+        ("Gestão Cardiovascular (Aeróbio):", 
+         "Manter atividade aeróbia 5 dias por semana (caminhada rápida intervalada com intensidade cíclica). "
+         "Somar pelo menos 150 minutos semanais mantendo uma zona de RPE 14-17 (moderada)."),
+        ("Treino de Força e Hipertrofia:", 
+         "Manter a rotina de 2 a 4 dias por semana (não consecutivos) focada em exercícios multiarticulares "
+         "(Agachamento, Deadlift, Bench Press). Realizar entre 6 a 12 repetições com RiR de 2 a 3."),
+        ("Rotina Ativa no Dia-a-Dia:", 
+         "Privilegiar o transporte ativo, evitar o uso de elevadores e quebrar ciclos de sedentarismo "
+         "prolongado a cada 90 minutos."),
+        ("Sinais de Alerta e Monitorização:", 
+         "O utente está familiarizado com a monitorização de sinais vitais e da Escala de Esforço de Borg. "
+         "Aconselhada verificação semanal em casa da Glicemia de jejum e Pressão Arterial, contactando a "
+         "equipa de tratamento primário em caso de recrudescimento sistemático dos valores."),
+    ]
+    for titulo, texto in bullets:
+        story.append(Paragraph(f"• <b>{titulo}</b> {texto}", estilo_normal))
+        
+    story.append(Spacer(1, 0.6*cm))
+    story.append(Paragraph(
+        "<i>Equipa de Fisiologia do Exercício | BestCare Pro</i>",
+        ParagraphStyle("ass", parent=estilo_normal, alignment=2, textColor=colors.HexColor("#7f8c8d"))
+    ))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
 conn = init_db()
 seed_se_vazio(conn)
 df_hist = carregar_sessoes(conn)
@@ -262,6 +377,26 @@ if user_role == "👤 Portal do Utente":
 
     with tabs[0]:
         st.markdown(f'<div class="client-card"><h4>🎯 Próxima sessão disponível no calendário.</h4></div>', unsafe_allow_html=True)
+        
+        # Contador cumulativo de horas de treino
+        n_sessoes_feitas = len(df_hist)
+        horas_totais = n_sessoes_feitas * 0.5  # 30 min/sessão
+        h_int = int(horas_totais)
+        m_int = int(round((horas_totais - h_int) * 60))
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #2c3e50 0%, #2980b9 100%); 
+                        color: white; padding: 22px; border-radius: 10px; margin: 12px 0 18px 0;
+                        box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
+                <div style="font-size: 0.95em; opacity: 0.85; letter-spacing: 0.5px;">⏱️ TEMPO ACUMULADO DE TREINO</div>
+                <div style="font-size: 2.2em; font-weight: 700; margin-top: 6px;">
+                    Já treinou {h_int}h{m_int:02d}min!
+                </div>
+                <div style="font-size: 0.9em; opacity: 0.85; margin-top: 4px;">
+                    {n_sessoes_feitas} sessões validadas · continue o excelente trabalho 💪
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("🏃 Cardio (Zonas Alvo)")
@@ -300,27 +435,48 @@ if user_role == "👤 Portal do Utente":
         if vista_calendario == "Por Fase (Detalhe Semanal)":
             fase_atual = st.selectbox("Visualizar calendário para a fase:", ["Inicial", "Desenvolvimento", "Manutenção"])
             if fase_atual == "Inicial":
-                config = {0:"Força + Aeróbio", 1:"Aeróbio", 2:"Aeróbio", 3:"Força + Aeróbio", 4:"Aeróbio"}
-                cls = "cal-inicial"; inicio_fase = DATA_INICIO_PROGRAMA
+                # 3 dias de força + aeróbio (Seg/Qua/Sex), restantes aeróbio leve
+                config = {0:"Força + Aeróbio", 1:"Aeróbio", 2:"Força + Aeróbio", 3:"Aeróbio", 4:"Força + Aeróbio"}
+                cls = "cal-inicial"
+                inicio_fase = DATA_INICIO_PROGRAMA
+                n_semanas = 4
             elif fase_atual == "Desenvolvimento":
-                config = {0:"Força + Aeróbio", 2:"Força + Aeróbio", 4:"Força + Aeróbio", 1:"Aeróbio", 3:"Aeróbio"}
-                cls = "cal-desenv"; inicio_fase = DATA_INICIO_PROGRAMA + timedelta(weeks=4)
+                config = {0:"Força + Aeróbio", 1:"Aeróbio", 2:"Força + Aeróbio", 3:"Aeróbio", 4:"Força + Aeróbio"}
+                cls = "cal-desenv"
+                inicio_fase = DATA_INICIO_PROGRAMA + timedelta(weeks=4)
+                n_semanas = 40
             else:
-                config = {0:"Força + Aeróbio", 1:"Força + Aeróbio", 3:"Força + Aeróbio", 4:"Força + Aeróbio", 2:"Aeróbio"}
-                cls = "cal-manutencao"; inicio_fase = DATA_INICIO_PROGRAMA + timedelta(weeks=44)
-
-            for sem in range(1, 3):
-                inicio_semana = inicio_fase + timedelta(weeks=sem-1)
-                st.markdown(f"**Semana {sem}** (Início a {inicio_semana.day} de {meses_pt[inicio_semana.month-1]})")
-                cols = st.columns(7)
-                for i in range(7):
-                    dia_atual = inicio_semana + timedelta(days=i)
-                    str_dia = f"{dias_pt[dia_atual.weekday()]}, {dia_atual.day} {meses_pt[dia_atual.month-1]}"
-                    with cols[i]:
-                        if i in config:
-                            st.markdown(f'<div class="cal-day {cls}"><b>{str_dia}</b><br>{config[i]}<br><small>30 min</small></div>', unsafe_allow_html=True)
-                        else:
-                            st.markdown(f'<div class="cal-day cal-rest"><b>{str_dia}</b><br>Descanso</div>', unsafe_allow_html=True)
+                config = {0:"Força + Aeróbio", 1:"Força + Aeróbio", 2:"Aeróbio", 3:"Força + Aeróbio", 4:"Força + Aeróbio"}
+                cls = "cal-manutencao"
+                inicio_fase = DATA_INICIO_PROGRAMA + timedelta(weeks=44)
+                n_semanas = 8
+                
+            st.caption(f"Fase **{fase_atual}** · {n_semanas} semanas · {len(config)} sessões/semana")
+            
+            # Para fases longas (Desenvolvimento), agrupar por bloco de 4 semanas com expander
+            if n_semanas <= 8:
+                intervalos = [(1, n_semanas)]
+            else:
+                intervalos = [(i, min(i+3, n_semanas)) for i in range(1, n_semanas+1, 4)]
+                
+            for ini, fim in intervalos:
+                if n_semanas > 8:
+                    container = st.expander(f"Semanas {ini} – {fim}", expanded=(ini == 1))
+                else:
+                    container = st.container()
+                with container:
+                    for sem in range(ini, fim+1):
+                        inicio_semana = inicio_fase + timedelta(weeks=sem-1)
+                        st.markdown(f"**Semana {sem}** (Início a {inicio_semana.day} de {meses_pt[inicio_semana.month-1]})")
+                        cols = st.columns(7)
+                        for i in range(7):
+                            dia_atual = inicio_semana + timedelta(days=i)
+                            str_dia = f"{dias_pt[dia_atual.weekday()]}, {dia_atual.day} {meses_pt[dia_atual.month-1]}"
+                            with cols[i]:
+                                if i in config:
+                                    st.markdown(f'<div class="cal-day {cls}"><b>{str_dia}</b><br>{config[i]}<br><small>30 min</small></div>', unsafe_allow_html=True)
+                                else:
+                                    st.markdown(f'<div class="cal-day cal-rest"><b>{str_dia}</b><br>Descanso</div>', unsafe_allow_html=True)
         else:
             st.info("Visão macro do processo de reabilitação estruturado a longo prazo (1 Ano / 52 Semanas).")
             st.markdown("🟢 **Semanas 1-4:** Fase Inicial | 🟠 **Semanas 5-44:** Fase Desenvolvimento | 🔴 **Semanas 45-52:** Manutenção")
@@ -457,7 +613,6 @@ else:
                 st.success("✅ Relatório guardado!")
                 st.rerun()
 
-        # ================= NOVA ZONA: RELATÓRIO FINAL =================
         st.divider()
         st.subheader("🎓 Relatório Final de Caso Clínico")
         st.info("Produção automática de relatório completo para a equipa de tratamento com análise da evolução anual e guidelines de transição para a vida autónoma.")
@@ -516,12 +671,13 @@ O doente encontra-se capacitado e com literacia funcional suficiente para adotar
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Botão para Download
+                # Download em PDF
+                pdf_bytes = gerar_pdf_relatorio(PACIENTE, primeira, ultima, total_sessoes_reg)
                 st.download_button(
-                    label="📥 Descarregar Documento (TXT)",
-                    data=relatorio_md,
-                    file_name=f"Alta_Clinica_{PACIENTE['nome'].replace(' ', '_')}.txt",
-                    mime="text/plain"
+                    label="📥 Descarregar Relatório (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"Alta_Clinica_{PACIENTE['nome'].replace(' ', '_')}.pdf",
+                    mime="application/pdf"
                 )
             else:
                 st.warning("⚠️ Não existem dados suficientes na base de dados para produzir o relatório de evolução.")
