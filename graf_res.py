@@ -193,7 +193,6 @@ def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg, vo2_estim
     
     story.append(Paragraph("2. ANÁLISE DE EVOLUÇÃO FISIOLÓGICA E METABÓLICA", estilo_h2))
     
-    # ------------------ TABELA ATUALIZADA (Tags e Paragraphs) ------------------
     vo2_label = Paragraph("VO<sub>2</sub> Máx (mL/kg/min)", estilo_celula_esq)
     cabecalhos = [
         Paragraph("<b>Parâmetro</b>", estilo_celula_esq),
@@ -230,22 +229,42 @@ def gerar_pdf_relatorio(paciente, primeira, ultima, total_sessoes_reg, vo2_estim
         "melhoria acentuada na sensibilidade à insulina, refletida de forma expressiva na queda da HbA1c "
         "para níveis de controlo não-patológicos.", estilo_normal))
         
+    # --- TABELA 3 CORRIGIDA (WRAP E SUB2) ---
     story.append(Paragraph("3. MODELAÇÃO CARDIORESPIRATÓRIA E PREVISÃO DE VO<sub>2</sub> MÁX", estilo_h2))
+    
+    cabecalhos_pred = [
+        Paragraph("<b>Fase Clínica</b>", estilo_celula_esq),
+        Paragraph("<b>Métricas de Adaptação Estimadas</b>", estilo_celula_esq),
+        Paragraph("<b>Impacto no VO<sub>2</sub> Máx Previsto</b>", estilo_celula_esq)
+    ]
+    
+    linha1_pred = [
+        Paragraph("Desenvolvimento<br/>(10 Meses)", estilo_celula_esq),
+        Paragraph("Redução da FC basal em 0.59%/mês.<br/>Melhoria inicial de ~10.8%/mês no VO<sub>2</sub> máx, com progressiva estagnação ao longo do tempo (curva logarítmica).", estilo_celula_esq),
+        Paragraph(f"+{round(vo2_estimado_atual - paciente['vo2_prev'], 1)} mL/kg/min acumulados<br/>(Meta final: ~{vo2_estimado_atual} mL/kg/min)", estilo_celula)
+    ]
+    
+    linha2_pred = [
+        Paragraph("Manutenção<br/>(2 Meses)", estilo_celula_esq),
+        Paragraph("Estabilização da FC basal (platô seguro nos 67 bpm).<br/>Consolidação da taxa metabólica.", estilo_celula_esq),
+        Paragraph(f"Retenção estável do pico adquirido<br/>(Platô: ~{vo2_estimado_atual} mL/kg/min)", estilo_celula)
+    ]
+
     tab_pred = Table([
-        ["Fase Clínica", "Métricas de Adaptação Estimadas", "Impacto no VO₂ Máx Previsto"],
-        ["Desenvolvimento\n(10 Meses)", "Redução da FC basal em 0.59%/mês.\nMelhoria inicial de ~10.8%/mês no VO₂máx, com progressiva estagnação ao longo do tempo (curva logarítmica).", f"+{round(vo2_estimado_atual - paciente['vo2_prev'], 1)} mL/kg/min acumulados\n(Meta final: ~{vo2_estimado_atual} mL/kg/min)"],
-        ["Manutenção\n(2 Meses)", "Estabilização da FC basal (platô seguro nos 67 bpm).\nConsolidação da taxa metabólica.", f"Retenção estável do pico adquirido\n(Platô: ~{vo2_estimado_atual} mL/kg/min)"],
+        cabecalhos_pred, 
+        linha1_pred, 
+        linha2_pred
     ], colWidths=[3.5*cm, 7.5*cm, 5*cm])
+    
     tab_pred.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#27ae60")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
         ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#bdc3c7")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
         ("PADDING", (0, 0), (-1, -1), 6),
     ]))
+    
     story.append(tab_pred)
     story.append(Spacer(1, 0.2*cm))
 
@@ -277,7 +296,6 @@ df_hist = carregar_sessoes(conn)
 
 # ---------- PRESCRIÇÕES ----------
 def render_prescricao_geral(fase):
-    # (A tua função original não foi alterada aqui para poupar espaço mental, é exatamente igual)
     st.markdown(f"#### Prescrição Geral — {fase}")
     if fase == "Inicial":
         data = [["Aeróbio", "5 dias/semana", "RPE 11-12 (leve)", "30'/sessão", "Caminhadas/Bicicleta"],
@@ -522,8 +540,6 @@ else:
                 vo2_ganho_estimado = 8.8
                 vo2_estimado_atual = round(PACIENTE['vo2_prev'] + vo2_ganho_estimado, 1)
                 
-                # Interface Visual (Mantive a tua estrutura MD)
-                # ... (texto base removido aqui para encurtar visualmente, mas já está em baixo com o st.markdown)
                 st.markdown(f"""
                 <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border-left: 5px solid #27ae60; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-top: 20px;">
                     <h3>🏥 RELATÓRIO CLÍNICO DE EVOLUÇÃO E TRANSIÇÃO DE ALTA</h3>
@@ -553,7 +569,6 @@ else:
             vol = df_hist['reps_total'] * df_hist['series_total']
             res_corr, p_corr = stats.pearsonr(vol, df_hist['pse'])
             
-            # --- INTEGRAÇÃO DA NOVA FUNÇÃO E "p value" ---
             classificacao = analisar_correlacao(res_corr)
             st.success(f"**Análise da Relação (Hinkle et al.):** Observa-se uma correlação **{classificacao}** entre o volume total de treino e a Perceção Subjetiva de Esforço (PSE).")
             
